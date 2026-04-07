@@ -90,18 +90,14 @@ function getDaysInRange(s,e){const days=[];let c=new Date(s);const end=new Date(
 function getWeekStart(d){const r=new Date(d);r.setDate(r.getDate()-r.getDay());return r;}
 const COLORS=["bg-blue-200 text-blue-800","bg-green-200 text-green-800","bg-purple-200 text-purple-800","bg-pink-200 text-pink-800","bg-yellow-200 text-yellow-800","bg-red-200 text-red-800","bg-indigo-200 text-indigo-800","bg-teal-200 text-teal-800"];
 const WDAY=["\uc77c","\uc6d4","\ud654","\uc218","\ubaa9","\uae08","\ud1a0"];
-/* Always read fresh bookings from DB to avoid stale data */
 function getFreshBookings(){return (getDB().bookings||[]);}
 function isHelperBusyOnDate(hId,dateStr,bookings,startTime,endTime){
   const bks=bookings||getFreshBookings();
   return bks.some(b=>{
     if(b.helperId!==hId||b.status!=="active"||!b.startDate||!b.endDate)return false;
     if(dateStr<b.startDate||dateStr>b.endDate)return false;
-    /* Time overlap check: if both have times, check overlap */
-    if(startTime&&endTime&&b.startTime&&b.endTime){
-      return startTime<b.endTime&&b.startTime<endTime;
-    }
-    return true; /* no time info = assume full day = conflict */
+    if(startTime&&endTime&&b.startTime&&b.endTime){return startTime<b.endTime&&b.startTime<endTime;}
+    return true;
   });
 }
 function isHelperBusyInRange(hId,sd,ed,bookings,startTime,endTime){
@@ -109,14 +105,6 @@ function isHelperBusyInRange(hId,sd,ed,bookings,startTime,endTime){
   const bks=bookings||getFreshBookings();
   const days=getDaysInRange(sd,ed);
   return days.some(d=>isHelperBusyOnDate(hId,d,bks,startTime,endTime));
-}
-function getAvailableHelpers(helpers,sd,ed,bookings){
-  const bks=bookings||getFreshBookings();
-  return helpers.filter(h=>!isHelperBusyInRange(h.id,sd,ed,bks));
-}
-function getAvailableHelpersForDate(helpers,dateStr,bookings){
-  const bks=bookings||getFreshBookings();
-  return helpers.filter(h=>!isHelperBusyOnDate(h.id,dateStr,bks));
 }
 
 const TEMPLATES=[
@@ -144,20 +132,8 @@ function Dashboard({stats,requests,callRequests}){
       ].map((c,i)=><div key={i} className={`${c.bg} rounded-xl p-5 border border-gray-100`}><p className="text-xs text-gray-500">{c.l}</p><p className={`text-2xl font-bold mt-1 ${c.c}`}>{c.v}</p></div>)}
     </div>
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div>
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">최근 돌봄 신청</h3>
-        {recent.length===0?<p className="text-sm text-gray-400">아직 신청이 없습니다</p>:<div className="space-y-2">{recent.map(r=><div key={r.id} className="bg-white rounded-lg p-3 border border-gray-100 flex items-center justify-between">
-          <div><p className="text-sm font-medium">{r.name} <span className="text-gray-400">({r.phone})</span></p><p className="text-xs text-gray-500">{r.childName} - {new Date(r.createdAt).toLocaleDateString("ko-KR")}</p></div>
-          <Badge status={r.status}/>
-        </div>)}</div>}
-      </div>
-      <div>
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">전화 상담 대기</h3>
-        {recentCalls.length===0?<p className="text-sm text-gray-400">대기 중인 상담이 없습니다</p>:<div className="space-y-2">{recentCalls.map(c=><div key={c.id} className="bg-white rounded-lg p-3 border border-orange-100 flex items-center justify-between">
-          <div><p className="text-sm font-medium">{c.name} <span className="text-gray-400">({c.phone})</span></p><p className="text-xs text-gray-500">{new Date(c.createdAt).toLocaleDateString("ko-KR")} {new Date(c.createdAt).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})}</p></div>
-          <Badge status={c.status} map={CALL_ST}/>
-        </div>)}</div>}
-      </div>
+      <div><h3 className="text-sm font-semibold text-gray-700 mb-3">최근 돌봄 신청</h3>{recent.length===0?<p className="text-sm text-gray-400">아직 신청이 없습니다</p>:<div className="space-y-2">{recent.map(r=><div key={r.id} className="bg-white rounded-lg p-3 border border-gray-100 flex items-center justify-between"><div><p className="text-sm font-medium">{r.name} <span className="text-gray-400">({r.phone})</span></p><p className="text-xs text-gray-500">{r.childName} - {new Date(r.createdAt).toLocaleDateString("ko-KR")}</p></div><Badge status={r.status}/></div>)}</div>}</div>
+      <div><h3 className="text-sm font-semibold text-gray-700 mb-3">전화 상담 대기</h3>{recentCalls.length===0?<p className="text-sm text-gray-400">대기 중인 상담이 없습니다</p>:<div className="space-y-2">{recentCalls.map(c=><div key={c.id} className="bg-white rounded-lg p-3 border border-orange-100 flex items-center justify-between"><div><p className="text-sm font-medium">{c.name} <span className="text-gray-400">({c.phone})</span></p><p className="text-xs text-gray-500">{new Date(c.createdAt).toLocaleDateString("ko-KR")} {new Date(c.createdAt).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})}</p></div><Badge status={c.status} map={CALL_ST}/></div>)}</div>}</div>
     </div>
   </div>;
 }
@@ -167,16 +143,14 @@ function Dashboard({stats,requests,callRequests}){
    ═══════════════════════ */
 function Requests({requests,helpers,bookings:allBookings,reload}){
   const [filter,setFilter]=useState("all");const [search,setSearch]=useState("");
-  const [sel,setSel]=useState(null); /* null=list view, object=detail view */
+  const [sel,setSel]=useState(null);
   const [msgModal,setMsgModal]=useState(false);const [bookingModal,setBookingModal]=useState(false);
   const [msgTpl,setMsgTpl]=useState("");const [msgText,setMsgText]=useState("");
   const [memoText,setMemoText]=useState("");
   const [bkForm,setBkForm]=useState({startDate:"",endDate:"",startTime:"09:00",endTime:"18:00",helperId:"",fee:""});
   const [bkError,setBkError]=useState("");
-  /* Fee editing */
   const [feeEdit,setFeeEdit]=useState(false);
-  /* Edit booking */
-  const [editBkModal,setEditBkModal]=useState(null); /* booking object to edit */
+  const [editBkModal,setEditBkModal]=useState(null);
   const [editBkForm,setEditBkForm]=useState({startDate:"",endDate:"",startTime:"",endTime:"",helperId:"",fee:""});
 
   const filtered=requests.filter(r=>{
@@ -186,9 +160,22 @@ function Requests({requests,helpers,bookings:allBookings,reload}){
   }).reverse();
 
   const getReqBookings=(reqId)=>{const db=getDB();return (db.bookings||[]).filter(b=>b.requestId===reqId&&b.status==="active");};
-  const hasDateOverlap=(reqId,newSD,newED,newST,newET,excludeBookingId)=>{const existing=getReqBookings(reqId).filter(b=>b.id!==excludeBookingId);return existing.some(b=>{if(!b.startDate||!b.endDate)return false;if(newSD>b.endDate||b.startDate>newED)return false;if(newST&&newET&&b.startTime&&b.endTime)return newST<b.endTime&&b.startTime<newET;return true;});};
   const getUncoveredDates=(reqId,reqSD,reqED)=>{if(!reqSD||!reqED)return[];const allDays=getDaysInRange(reqSD,reqED);const bks=getReqBookings(reqId);return allDays.filter(d=>!bks.some(b=>b.startDate&&b.endDate&&d>=b.startDate&&d<=b.endDate));};
-
+  /* 같은 신청의 같은 날짜에 시간 겹침 체크 (1일 1명만 해당 시간대) */
+  const toMin=t=>{const p=(t||"09:00").split(":");return parseInt(p[0])*60+parseInt(p[1]||0);};
+  const minToStr=m=>String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0");
+  const hasTimeOverlapInReq=(reqId,newSD,newED,newST,newET,excludeId)=>{
+    const existing=getReqBookings(reqId).filter(b=>b.id!==excludeId);
+    return existing.some(b=>{if(!b.startDate||!b.endDate)return false;if(newSD>b.endDate||b.startDate>newED)return false;if(newST&&newET&&b.startTime&&b.endTime)return newST<b.endTime&&b.startTime<newET;return true;});
+  };
+  /* 특정 날짜의 빈 시간 계산 */
+  const getDayGaps=(reqId,dateStr,defST,defET,excludeId)=>{
+    const bks=getReqBookings(reqId).filter(b=>b.id!==excludeId&&b.startDate&&b.endDate&&dateStr>=b.startDate&&dateStr<=b.endDate).sort((a,b)=>(a.startTime||"").localeCompare(b.startTime||""));
+    const minS=toMin(defST),maxE=toMin(defET);const gaps=[];let cursor=minS;
+    bks.forEach(bk=>{const bS=toMin(bk.startTime||defST),bE=toMin(bk.endTime||defET);if(bS>cursor)gaps.push({s:cursor,e:bS});cursor=Math.max(cursor,bE);});
+    if(cursor<maxE)gaps.push({s:cursor,e:maxE});
+    return gaps;
+  };
   const updateReq=(id,updates)=>{const db=getDB();const idx=db.requests.findIndex(r=>r.id===id);if(idx<0)return;db.requests[idx]={...db.requests[idx],...updates};saveDB(db);reload();setSel(db.requests[idx]);};
   const saveMemo=()=>{if(!sel)return;const db=getDB();const idx=db.requests.findIndex(r=>r.id===sel.id);if(idx<0)return;if(!db.requests[idx].memos)db.requests[idx].memos=[];db.requests[idx].memos.push({text:memoText,createdAt:new Date().toISOString()});saveDB(db);reload();setSel(db.requests[idx]);setMemoText("");};
 
@@ -196,17 +183,12 @@ function Requests({requests,helpers,bookings:allBookings,reload}){
     if(!sel||!bkForm.helperId){setBkError("도우미를 선택해주세요.");return;}
     if(!bkForm.startDate||!bkForm.endDate){setBkError("시작일과 종료일을 입력해주세요.");return;}
     if(bkForm.startDate>bkForm.endDate){setBkError("종료일이 시작일보다 빠릅니다.");return;}
-    /* 같은 시간대 다중 도우미 배정 허용 - 동일 도우미 중복만 차단 */
-    const existBks=getReqBookings(sel.id);
-    const sameHelper=existBks.some(b=>{if(b.helperId!==bkForm.helperId||!b.startDate||!b.endDate)return false;if(bkForm.startDate>b.endDate||b.startDate>bkForm.endDate)return false;if(bkForm.startTime&&bkForm.endTime&&b.startTime&&b.endTime)return bkForm.startTime<b.endTime&&b.startTime<bkForm.endTime;return true;});
-    if(sameHelper){setBkError("같은 도우미가 이미 해당 기간/시간에 배정되어 있습니다.");return;}
+    if(hasTimeOverlapInReq(sel.id,bkForm.startDate,bkForm.endDate,bkForm.startTime,bkForm.endTime,null)){setBkError("해당 시간대에 이미 다른 도우미가 배정되어 있습니다. 빈 시간을 확인해주세요.");return;}
     const db=getDB();
     if(isHelperBusyInRange(bkForm.helperId,bkForm.startDate,bkForm.endDate,db.bookings,bkForm.startTime,bkForm.endTime)){setBkError("선택한 도우미가 해당 기간/시간에 다른 예약이 있습니다.");return;}
     db.bookings.push({id:genId(db),requestId:sel.id,helperId:bkForm.helperId,startDate:bkForm.startDate,endDate:bkForm.endDate,startTime:bkForm.startTime,endTime:bkForm.endTime,status:"active",fee:Number(bkForm.fee)||0,settlementStatus:"pending",memo:"",createdAt:new Date().toISOString()});
-    const reqIdx=db.requests.findIndex(r=>r.id===sel.id);
-    if(reqIdx>=0&&db.requests[reqIdx].status!=="matched"&&db.requests[reqIdx].status!=="cancelled")db.requests[reqIdx].status="matching";
     saveDB(db);reload();setBookingModal(false);setBkError("");setBkForm({startDate:"",endDate:"",startTime:"09:00",endTime:"18:00",helperId:"",fee:""});
-    setSel(db.requests[reqIdx]);
+    const reqIdx=db.requests.findIndex(r=>r.id===sel.id);if(reqIdx>=0)setSel(db.requests[reqIdx]);
   };
   const removeBooking=(bId)=>{if(!confirm("이 예약을 삭제하시겠습니까?"))return;const db=getDB();db.bookings=db.bookings.filter(b=>b.id!==bId);saveDB(db);reload();};
   const openEditBk=(bk)=>{setEditBkModal(bk);setEditBkForm({startDate:bk.startDate,endDate:bk.endDate,startTime:bk.startTime||"09:00",endTime:bk.endTime||"18:00",helperId:bk.helperId,fee:bk.fee||""});setBkError("");};
@@ -215,17 +197,14 @@ function Requests({requests,helpers,bookings:allBookings,reload}){
     if(!editBkForm.helperId){setBkError("도우미를 선택해주세요.");return;}
     if(!editBkForm.startDate||!editBkForm.endDate){setBkError("날짜를 입력해주세요.");return;}
     if(editBkForm.startDate>editBkForm.endDate){setBkError("종료일이 시작일보다 빠릅니다.");return;}
-    /* 같은 도우미 중복 배정만 차단 */
     const db=getDB();
-    const editExistBks=getReqBookings(sel.id).filter(b=>b.id!==editBkModal.id);
-    const editSameHelper=editExistBks.some(b=>{if(b.helperId!==editBkForm.helperId||!b.startDate||!b.endDate)return false;if(editBkForm.startDate>b.endDate||b.startDate>editBkForm.endDate)return false;if(editBkForm.startTime&&editBkForm.endTime&&b.startTime&&b.endTime)return editBkForm.startTime<b.endTime&&b.startTime<editBkForm.endTime;return true;});
-    if(editSameHelper){setBkError("같은 도우미가 이미 해당 기간/시간에 배정되어 있습니다.");return;}
+    if(hasTimeOverlapInReq(sel.id,editBkForm.startDate,editBkForm.endDate,editBkForm.startTime,editBkForm.endTime,editBkModal.id)){setBkError("해당 시간대에 이미 다른 도우미가 배정되어 있습니다. 빈 시간을 확인해주세요.");return;}
     if(editBkForm.helperId!==editBkModal.helperId&&isHelperBusyInRange(editBkForm.helperId,editBkForm.startDate,editBkForm.endDate,db.bookings.filter(b=>b.id!==editBkModal.id),editBkForm.startTime,editBkForm.endTime)){setBkError("선택한 도우미가 해당 기간/시간에 다른 예약이 있습니다.");return;}
     const idx=db.bookings.findIndex(b=>b.id===editBkModal.id);
     if(idx>=0){db.bookings[idx]={...db.bookings[idx],startDate:editBkForm.startDate,endDate:editBkForm.endDate,startTime:editBkForm.startTime,endTime:editBkForm.endTime,helperId:editBkForm.helperId,fee:Number(editBkForm.fee)||0};}
     saveDB(db);reload();setEditBkModal(null);setBkError("");
   };
-  const sendMsg=()=>{let text=msgText;if(sel){const hNames=getReqBookings(sel.id).map(b=>{const h=helpers.find(x=>x.id===b.helperId);return h?h.name:"";}).filter(Boolean).join(", ");text=text.replace("{name}",sel.name||"").replace("{helper}",hNames||"").replace("{date}",sel.startDate||"");}alert("메시지 전송 완료 (시뮬레이션):\n수신: "+((sel&&sel.phone)||"")+"\n\n"+text);setMsgModal(false);setMsgText("");};
+  const sendMsg=()=>{let text=msgText;if(sel){const hNames=getReqBookings(sel.id).map(b=>{const h=helpers.find(x=>x.id===b.helperId);return h?h.name:"";}).filter(Boolean).join(", ");text=text.replace("{name}",sel.name||"").replace("{helper}",hNames||"").replace("{date}",sel.startDate||"");}alert("메시지 전송 완료:\n수신: "+((sel&&sel.phone)||"")+"\n\n"+text);setMsgModal(false);setMsgText("");};
   useEffect(()=>{if(sel){const latest=requests.find(r=>r.id===sel.id);if(latest)setSel(latest);}},[requests]);
 
   /* ── LIST VIEW ── */
@@ -241,11 +220,8 @@ function Requests({requests,helpers,bookings:allBookings,reload}){
         <tbody>{filtered.length===0?<tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">조건에 맞는 신청이 없습니다</td></tr>:filtered.map(r=>{
           const rBks=getReqBookings(r.id);
           return <tr key={r.id} onClick={()=>{setSel(r);setFeeEdit(false);}} className="border-t border-gray-100 cursor-pointer hover:bg-indigo-50 transition">
-            <td className="px-4 py-3 font-semibold">{r.name}</td>
-            <td className="px-4 py-3 text-gray-500">{r.phone}</td>
-            <td className="px-4 py-3">{r.childName||"-"}</td>
-            <td className="px-4 py-3 text-xs text-gray-500">{r.startDate?`${r.startDate} ~ ${r.endDate}`:"-"}</td>
-            <td className="px-4 py-3"><Badge status={r.status}/></td>
+            <td className="px-4 py-3 font-semibold">{r.name}</td><td className="px-4 py-3 text-gray-500">{r.phone}</td><td className="px-4 py-3">{r.childName||"-"}</td>
+            <td className="px-4 py-3 text-xs text-gray-500">{r.startDate?`${r.startDate} ~ ${r.endDate}`:"-"}</td><td className="px-4 py-3"><Badge status={r.status}/></td>
             <td className="px-4 py-3">{rBks.length>0?<span className="text-xs text-green-600 font-semibold">{rBks.length}명</span>:<span className="text-xs text-gray-400">-</span>}</td>
             <td className="px-4 py-3 text-xs text-gray-400">{new Date(r.createdAt).toLocaleDateString("ko-KR")}</td>
           </tr>;
@@ -258,26 +234,16 @@ function Requests({requests,helpers,bookings:allBookings,reload}){
   const selBks=getReqBookings(sel.id);
   const uncovered=sel.startDate&&sel.endDate?getUncoveredDates(sel.id,sel.startDate,sel.endDate):[];
   const allCovered=sel.startDate&&sel.endDate&&uncovered.length===0&&selBks.length>0;
-  /* Fee calculations */
-  const deposit=Number(sel.deposit)||0;
-  const baseFee=Number(sel.baseFee)||0;
-  const extraFee=Number(sel.extraFee)||0;
-  const cancelFee=Number(sel.cancelFee)||0;
-  const totalFee=baseFee;
-  const grandTotal=baseFee+extraFee;
+  const deposit=Number(sel.deposit)||0;const baseFee=Number(sel.baseFee)||0;const extraFee=Number(sel.extraFee)||0;const cancelFee=Number(sel.cancelFee)||0;const grandTotal=baseFee+extraFee;
 
   return <div className="fade-in space-y-4">
-    {/* Back button */}
     <button onClick={()=>setSel(null)} className="flex items-center gap-1 text-sm text-indigo-600 hover:text-indigo-800 font-medium transition">{"\u25C0"} 목록으로</button>
-
-    {/* Header */}
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-3"><h2 className="text-xl font-bold text-gray-900">{sel.name}</h2><Badge status={sel.status}/></div>
       <p className="text-sm text-gray-500">{sel.phone}</p>
     </div>
-
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      {/* Left: Info + Fees */}
+      {/* Left: Info + Fees + Memo */}
       <div className="space-y-4">
         <div className="bg-white rounded-xl border border-gray-100 p-5 space-y-3">
           <h4 className="font-bold text-sm text-gray-900">신청 정보</h4>
@@ -285,13 +251,8 @@ function Requests({requests,helpers,bookings:allBookings,reload}){
             {[["성별",sel.gender],["생년월일",sel.birth],["주소",sel.address],["상세주소",sel.addressDetail],["공동현관",mask(sel.entranceCode)],["비밀번호",mask(sel.doorCode)],["아이",sel.childName],["아이 성별",sel.childGender],["아이 생일",sel.childBirth],["특이사항",sel.childNote],["요구사항",sel.parentRequest],sel.startDate&&["시작일",sel.startDate],sel.endDate&&["종료일",sel.endDate],sel.startTime&&["시간",`${sel.startTime}~${sel.endTime}`]].filter(Boolean).map(([k,v],i)=><div key={i}><p className="text-xs text-gray-400">{k}</p><p className="font-medium text-gray-800">{v||"-"}</p></div>)}
           </div>
         </div>
-
-        {/* Fee Section */}
         <div className="bg-white rounded-xl border border-gray-100 p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <h4 className="font-bold text-sm text-gray-900">{"\u{1F4B0}"} 금액 정보</h4>
-            <Btn v="secondary" cls="text-xs" onClick={()=>setFeeEdit(!feeEdit)}>{feeEdit?"닫기":"수정"}</Btn>
-          </div>
+          <div className="flex items-center justify-between"><h4 className="font-bold text-sm text-gray-900">{"\u{1F4B0}"} 금액 정보</h4><Btn v="secondary" cls="text-xs" onClick={()=>setFeeEdit(!feeEdit)}>{feeEdit?"닫기":"수정"}</Btn></div>
           {feeEdit?<div className="space-y-2">
             <Inp label="예약금 (원)" type="number" value={sel.deposit||""} onChange={e=>updateReq(sel.id,{deposit:Number(e.target.value)||0})}/>
             <Inp label="원금 (원)" type="number" value={sel.baseFee||""} onChange={e=>updateReq(sel.id,{baseFee:Number(e.target.value)||0})}/>
@@ -304,11 +265,8 @@ function Requests({requests,helpers,bookings:allBookings,reload}){
             <div className="bg-gray-50 rounded-lg p-3 text-center"><p className="text-xs text-gray-500">추가금</p><p className="font-bold text-sm text-orange-600">{extraFee.toLocaleString()}원</p></div>
             <div className="bg-gray-50 rounded-lg p-3 text-center"><p className="text-xs text-gray-500">총액</p><p className="font-bold text-sm text-indigo-600">{grandTotal.toLocaleString()}원</p></div>
             {cancelFee>0&&<div className="col-span-2 bg-red-50 rounded-lg p-3 text-center"><p className="text-xs text-red-500">중도/취소 수수료</p><p className="font-bold text-sm text-red-600">{cancelFee.toLocaleString()}원</p></div>}
-            <div className="col-span-2 bg-indigo-50 rounded-lg p-3 text-center"><p className="text-xs text-indigo-500">추가금 포함 총액</p><p className="font-bold text-lg text-indigo-700">{grandTotal.toLocaleString()}원</p></div>
           </div>}
         </div>
-
-        {/* Memo */}
         <div className="bg-white rounded-xl border border-gray-100 p-5 space-y-3">
           <h4 className="font-bold text-sm text-gray-900">{"\u{1F4CC}"} 관리 메모</h4>
           <div className="max-h-48 overflow-y-auto space-y-2">
@@ -318,9 +276,8 @@ function Requests({requests,helpers,bookings:allBookings,reload}){
         </div>
       </div>
 
-      {/* Right: Actions + Helpers + Coverage */}
+      {/* Right: Actions + Schedule Calendar */}
       <div className="space-y-4">
-        {/* Actions */}
         <div className="bg-white rounded-xl border border-gray-100 p-5 space-y-3">
           <h4 className="font-bold text-sm text-gray-900">관리</h4>
           <div className="flex gap-2 flex-wrap">
@@ -329,7 +286,7 @@ function Requests({requests,helpers,bookings:allBookings,reload}){
           </div>
         </div>
 
-        {/* Schedule Calendar */}
+        {/* ─── Schedule Calendar (도우미 추가/삭제 통합) ─── */}
         <div className="bg-white rounded-xl border border-gray-100 p-5 space-y-3">
           <div className="flex items-center justify-between">
             <h4 className="font-bold text-sm text-gray-900">{"\u{1F4C5}"} 배정 일정표</h4>
@@ -337,7 +294,7 @@ function Requests({requests,helpers,bookings:allBookings,reload}){
               {allCovered&&<span className="px-2 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700">전체 커버</span>}
               {!allCovered&&selBks.length>0&&uncovered.length>0&&<span className="px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-600">{uncovered.length}일 미배정</span>}
               <span className="text-xs text-gray-500">{selBks.length}건</span>
-              <Btn v="warning" cls="text-xs py-1" onClick={()=>{setBookingModal(true);setBkError("");setBkForm({startDate:sel.startDate||"",endDate:sel.endDate||"",startTime:sel.startTime||"09:00",endTime:sel.endTime||"18:00",helperId:"",fee:""});}}>+ 도우미 추가</Btn>
+              <Btn v="warning" cls="text-xs py-1" onClick={()=>{setBookingModal(true);setBkError("");setBkForm({startDate:sel.startDate||"",endDate:sel.endDate||"",startTime:sel.startTime||"09:00",endTime:sel.endTime||"18:00",helperId:"",fee:""});}}>+ 추가</Btn>
             </div>
           </div>
           {sel.startDate&&sel.endDate?(()=>{
@@ -345,72 +302,50 @@ function Requests({requests,helpers,bookings:allBookings,reload}){
             const reqST=sel.startTime||"09:00",reqET=sel.endTime||"18:00";
             const toMin=t=>{const p=(t||"09:00").split(":");return parseInt(p[0])*60+parseInt(p[1]||0);};
             const minST=toMin(reqST),maxET=toMin(reqET),totalMin=Math.max(maxET-minST,1);
-            /* helper color index */
             const hCI={};selBks.forEach(b=>{if(!(b.helperId in hCI))hCI[b.helperId]=Object.keys(hCI).length;});
             const barBg=["#93c5fd","#86efac","#c4b5fd","#f9a8d4","#fde68a","#fca5a5","#a5b4fc","#99f6e4"];
             const dotBg=["bg-blue-400","bg-green-400","bg-purple-400","bg-pink-400","bg-yellow-400","bg-red-400","bg-indigo-400","bg-teal-400"];
-            /* time labels */
             const tLabels=[];for(let t=Math.ceil(minST/60)*60;t<=maxET;t+=60){if(t>=minST)tLabels.push({label:String(Math.floor(t/60)).padStart(2,"0")+":00",pos:((t-minST)/totalMin)*100});}
             const minToStr=m=>String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0");
-            /* Lane assignment for overlapping bookings */
-            const assignLanes=(dayBks)=>{
-              const lanes=[];
-              const sorted=[...dayBks].sort((a,b)=>(a.startTime||"").localeCompare(b.startTime||""));
-              sorted.forEach(bk=>{
-                const bST=toMin(bk.startTime||reqST),bET=toMin(bk.endTime||reqET);
-                let assigned=false;
-                for(let li=0;li<lanes.length;li++){
-                  const canFit=lanes[li].every(ob=>{const oS=toMin(ob.startTime||reqST),oE=toMin(ob.endTime||reqET);return bET<=oS||bST>=oE;});
-                  if(canFit){lanes[li].push(bk);bk._lane=li;assigned=true;break;}
-                }
-                if(!assigned){bk._lane=lanes.length;lanes.push([bk]);}
-              });
-              return lanes.length||1;
-            };
+            /* assignLanes 제거 — 1일 1시간대 1도우미만 (겹침 없음) */
             return <div className="space-y-1">
-              {/* Legend */}
               {Object.keys(hCI).length>0&&<div className="flex flex-wrap gap-2 mb-1">{Object.entries(hCI).map(([hId,ci])=>{const h=helpers.find(x=>x.id===hId);return <span key={hId} className="flex items-center gap-1 text-xs"><span className={`w-2.5 h-2.5 rounded-full ${dotBg[ci%dotBg.length]}`}/><span className="font-medium">{h?h.name:"?"}</span>{h&&<span className="text-yellow-500">{"\u2B50"}{h.rating}</span>}</span>;})}</div>}
-              {/* Time axis */}
-              <div className="flex items-center" style={{paddingLeft:"62px",paddingRight:"28px"}}><div className="flex-1 relative h-4">{tLabels.map((t,i)=><span key={i} className="absolute text-xs text-gray-400 leading-none" style={{left:t.pos+"%",transform:"translateX(-50%)"}}>{t.label}</span>)}</div></div>
-              {/* Day rows */}
+              <div className="flex items-center" style={{paddingLeft:"62px",paddingRight:"52px"}}><div className="flex-1 relative h-4">{tLabels.map((t,i)=><span key={i} className="absolute text-xs text-gray-400 leading-none" style={{left:t.pos+"%",transform:"translateX(-50%)"}}>{t.label}</span>)}</div></div>
               {allDays.map(d=>{
                 const dt=new Date(d);const wd=dt.getDay();const isSun=wd===0;const isSat=wd===6;const isToday=d===fmt(new Date());
                 const dayBks=selBks.filter(b=>b.startDate&&b.endDate&&d>=b.startDate&&d<=b.endDate);
-                const numLanes=assignLanes(dayBks);
-                const laneH=22,rowH=Math.max(26,numLanes*laneH+4);
-                const openAdd=()=>{setBookingModal(true);setBkError("");setBkForm({startDate:d,endDate:d,startTime:reqST,endTime:reqET,helperId:"",fee:""});};
+                const rowH=26;
+                const openAdd=()=>{const gaps=getDayGaps(sel.id,d,reqST,reqET,null);if(gaps.length===0){setBkError("이 날짜에 빈 시간이 없습니다.");setBookingModal(true);setBkForm({startDate:d,endDate:d,startTime:reqST,endTime:reqET,helperId:"",fee:""});return;}const g=gaps[0];setBookingModal(true);setBkError("");setBkForm({startDate:d,endDate:d,startTime:minToStr(g.s),endTime:minToStr(g.e),helperId:"",fee:""});};
                 return <div key={d} className={`flex items-center gap-1 ${isToday?"bg-indigo-50 rounded-lg px-1":""}`}>
                   <div style={{width:"58px",flexShrink:0}} className="text-right pr-1">
                     <span className={`text-xs font-semibold ${isSun?"text-red-500":isSat?"text-blue-500":"text-gray-700"}`}>{d.slice(5)}</span>
                     <span className={`text-xs ml-0.5 ${isSun?"text-red-400":isSat?"text-blue-400":"text-gray-400"}`}>{WDAY[wd]}</span>
                   </div>
                   <div className="flex-1 relative rounded overflow-hidden border border-gray-200" onClick={openAdd} style={{height:rowH+"px",background:"#f3f4f6",cursor:"pointer"}} title="클릭하여 도우미 추가">
-                    {/* Booked segments in lanes */}
                     {dayBks.map((bk,bi)=>{
                       const bST=toMin(bk.startTime||reqST),bET=toMin(bk.endTime||reqET);
                       const l=Math.max(0,((bST-minST)/totalMin)*100),w=Math.min(100-l,((bET-bST)/totalMin)*100);
                       const ci=hCI[bk.helperId]||0;const h=helpers.find(x=>x.id===bk.helperId);
-                      const laneTop=(bk._lane||0)*laneH+2;
-                      return <div key={"b"+bi} onClick={(e)=>{e.stopPropagation();openEditBk(bk);}} className="absolute flex items-center px-1 cursor-pointer hover:opacity-100 rounded-sm" style={{left:l+"%",width:w+"%",top:laneTop+"px",height:(laneH-2)+"px",background:barBg[ci%barBg.length],opacity:0.9,zIndex:2}} title={`${h?h.name:"?"} ${bk.startTime||""}~${bk.endTime||""} (클릭: 수정)`}>
+                      return <div key={"b"+bi} onClick={(e)=>{e.stopPropagation();openEditBk(bk);}} className="absolute flex items-center px-1 cursor-pointer hover:opacity-100 rounded-sm" style={{left:l+"%",width:w+"%",top:"2px",height:"22px",background:barBg[ci%barBg.length],opacity:0.9,zIndex:2}} title={`${h?h.name:"?"} ${bk.startTime||""}~${bk.endTime||""} (클릭: 수정)`}>
                         <span className="text-xs font-semibold truncate" style={{color:"#1e293b",fontSize:"10px"}}>{h?h.name:"?"}</span>
                         {w>20&&<span className="ml-1 truncate opacity-60" style={{fontSize:"9px",color:"#334155"}}>{bk.startTime}~{bk.endTime}</span>}
                       </div>;
                     })}
                     {dayBks.length===0&&<div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400 hover:text-indigo-500 transition">+ 도우미 배정</div>}
-                    {dayBks.length>0&&<div className="absolute right-1 bottom-0.5 text-xs text-gray-400 font-medium" style={{zIndex:1,fontSize:"9px"}}>{dayBks.length}명</div>}
                   </div>
-                  <button onClick={openAdd} className="w-5 h-5 flex items-center justify-center rounded bg-indigo-50 text-indigo-500 hover:bg-indigo-100 text-xs font-bold flex-shrink-0" title="도우미 추가">+</button>
+                  {/* ── +/- 버튼 ── */}
+                  <div className="flex flex-col gap-0.5 flex-shrink-0">
+                    <button onClick={openAdd} className="w-5 h-5 flex items-center justify-center rounded bg-indigo-50 text-indigo-500 hover:bg-indigo-100 text-xs font-bold" title="도우미 추가">+</button>
+                    {dayBks.length>0&&<button onClick={()=>{if(dayBks.length===1){removeBooking(dayBks[0].id);}else{openEditBk(dayBks[dayBks.length-1]);}}} className="w-5 h-5 flex items-center justify-center rounded bg-red-50 text-red-500 hover:bg-red-100 text-xs font-bold" title={dayBks.length===1?"도우미 삭제":"마지막 배정 선택"}>-</button>}
+                  </div>
                 </div>;
               })}
-              {/* Booking detail list grouped by date */}
+              {/* ── 배정 목록 (일시 그룹) ── */}
               {selBks.length>0&&(()=>{
                 const sorted=[...selBks].sort((a,b)=>(a.startDate||"").localeCompare(b.startDate||"")||(a.startTime||"").localeCompare(b.startTime||""));
-                /* Group by date range */
-                const groups={};sorted.forEach(b=>{const key=`${b.startDate||"?"}~${b.endDate||"?"} ${b.startTime||"?"}~${b.endTime||"?"}`;if(!groups[key])groups[key]={startDate:b.startDate,endDate:b.endDate,startTime:b.startTime,endTime:b.endTime,items:[]};groups[key].items.push(b);});
+                const groups={};sorted.forEach(b=>{const key=`${b.startDate||"?"}~${b.endDate||"?"}_${b.startTime||"?"}~${b.endTime||"?"}`;if(!groups[key])groups[key]={startDate:b.startDate,endDate:b.endDate,startTime:b.startTime,endTime:b.endTime,items:[]};groups[key].items.push(b);});
                 return <div className="border-t pt-3 mt-2 space-y-2">
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="text-xs font-semibold text-gray-600">배정 목록 ({selBks.length}건)</p>
-                  </div>
+                  <p className="text-xs font-semibold text-gray-600">배정 목록 ({selBks.length}건)</p>
                   {Object.entries(groups).map(([key,g])=><div key={key} className="bg-gray-50 rounded-lg p-2.5 space-y-1">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -418,10 +353,13 @@ function Requests({requests,helpers,bookings:allBookings,reload}){
                         <span className="text-xs text-gray-500">{g.startTime}~{g.endTime}</span>
                         <span className="text-xs text-indigo-500 font-semibold">{g.items.length}명</span>
                       </div>
-                      <button onClick={()=>{setBookingModal(true);setBkError("");setBkForm({startDate:g.startDate,endDate:g.endDate,startTime:g.startTime,endTime:g.endTime,helperId:"",fee:""});}} className="text-xs text-indigo-500 hover:text-indigo-700 font-medium px-1.5 py-0.5 rounded hover:bg-indigo-50 transition">+ 추가</button>
+                      <div className="flex items-center gap-1">
+                        <button onClick={()=>{const gaps=getDayGaps(sel.id,g.startDate,sel.startTime||"09:00",sel.endTime||"18:00",null);if(gaps.length>0){setBookingModal(true);setBkError("");setBkForm({startDate:g.startDate,endDate:g.endDate,startTime:minToStr(gaps[0].s),endTime:minToStr(gaps[0].e),helperId:"",fee:""});}else{setBookingModal(true);setBkError("이 날짜에 빈 시간이 없습니다.");setBkForm({startDate:g.startDate,endDate:g.endDate,startTime:g.startTime,endTime:g.endTime,helperId:"",fee:""});}}} className="w-5 h-5 flex items-center justify-center rounded bg-indigo-50 text-indigo-500 hover:bg-indigo-100 text-xs font-bold" title="이 일시에 도우미 추가">+</button>
+                        <button onClick={()=>{removeBooking(g.items[g.items.length-1].id);}} className="w-5 h-5 flex items-center justify-center rounded bg-red-50 text-red-500 hover:bg-red-100 text-xs font-bold" title="마지막 도우미 삭제">-</button>
+                      </div>
                     </div>
-                    {g.items.map(b=>{const h=helpers.find(x=>x.id===b.helperId);const ci=hCI[b.helperId]||0;return <div key={b.id} className="flex items-center justify-between pl-2 py-1 rounded hover:bg-white group">
-                      <div className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer" onClick={()=>openEditBk(b)}>
+                    {g.items.map(b=>{const h=helpers.find(x=>x.id===b.helperId);const ci=hCI[b.helperId]||0;return <div key={b.id} className="flex items-center justify-between pl-2 py-1 rounded hover:bg-white group cursor-pointer" onClick={()=>openEditBk(b)}>
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
                         <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dotBg[ci%dotBg.length]}`}/>
                         <span className="text-xs font-semibold">{h?h.name:"?"}</span>
                         {h&&<span className="text-xs text-yellow-500">{"\u2B50"}{h.rating}</span>}
@@ -434,49 +372,42 @@ function Requests({requests,helpers,bookings:allBookings,reload}){
               })()}
               {uncovered.length>0&&<p className="text-xs text-red-500 mt-2 font-semibold">{"\u26A0\uFE0F"} 미배정 {uncovered.length}일</p>}
             </div>;
-          })():selBks.length===0?<p className="text-xs text-gray-400 py-2">상단 '+ 도우미 추가' 버튼 또는 일정표에서 추가하세요.</p>:
-          <div className="space-y-2">{selBks.sort((a,b)=>(a.startDate||"").localeCompare(b.startDate||"")).map(b=>{
-            const h=helpers.find(x=>x.id===b.helperId);
-            return <div key={b.id} className="bg-gray-50 rounded-lg p-3 flex items-center justify-between">
-              <div><span className="font-semibold text-sm">{h?h.name:"?"}</span><span className="text-xs text-gray-500 ml-2">{b.startDate}~{b.endDate} | {b.startTime}~{b.endTime}</span></div>
-              <button onClick={()=>removeBooking(b.id)} className="text-red-400 hover:text-red-600 text-xs">{"\u2715"}</button>
-            </div>;
-          })}</div>}
+          })():<p className="text-xs text-gray-400 py-2">신청 기간이 설정되면 일정표가 표시됩니다.</p>}
         </div>
       </div>
     </div>
 
     {/* Message Modal */}
     {msgModal&&<div className="modal-overlay" onClick={()=>setMsgModal(false)}><div className="modal-box" onClick={e=>e.stopPropagation()}>
-      <h3 className="font-bold text-lg mb-4">메시지 전송</h3><p className="text-xs text-gray-500 mb-2">수신: {sel.phone}</p><p className="text-xs text-gray-500 mb-2">템플릿</p>
+      <h3 className="font-bold text-lg mb-4">메시지 전송</h3><p className="text-xs text-gray-500 mb-2">수신: {sel.phone}</p>
       <div className="flex gap-2 mb-3 flex-wrap">{TEMPLATES.map((t,i)=><button key={i} onClick={()=>{setMsgTpl(t.name);setMsgText(t.body);}} className={`px-3 py-1 rounded-lg text-xs border transition ${msgTpl===t.name?"bg-indigo-50 border-indigo-300":"border-gray-200 hover:bg-gray-50"}`}>{t.name}</button>)}</div>
       <TA label="내용" value={msgText} onChange={e=>setMsgText(e.target.value)} rows={4}/><div className="flex gap-2 mt-3"><Btn onClick={sendMsg} disabled={!msgText}>전송</Btn><Btn v="secondary" onClick={()=>setMsgModal(false)}>취소</Btn></div>
     </div></div>}
 
-    {/* Booking Modal */}
+    {/* Booking Modal (도우미 추가) */}
     {bookingModal&&(()=>{
-      const db=getDB();const allBk=db.bookings||[];const sd=bkForm.startDate,ed=bkForm.endDate;
-      const st=bkForm.startTime,et=bkForm.endTime;
+      const db=getDB();const allBk=db.bookings||[];const sd=bkForm.startDate,ed=bkForm.endDate,st=bkForm.startTime,et=bkForm.endTime;
       const existingBks=allBk.filter(b=>b.requestId===sel.id&&b.status==="active");
-      /* 이미 배정된 같은 도우미 중복만 체크 (다른 도우미는 허용) */
-      const sameHelperDup=bkForm.helperId&&sd&&ed&&existingBks.some(b=>{if(b.helperId!==bkForm.helperId||!b.startDate||!b.endDate)return false;if(sd>b.endDate||b.startDate>ed)return false;if(st&&et&&b.startTime&&b.endTime)return st<b.endTime&&b.startTime<et;return true;});
+      const timeOverlap=sd&&ed&&st&&et&&hasTimeOverlapInReq(sel.id,sd,ed,st,et,null);
+      const gapInfo=(sd&&ed)?(()=>{const gaps=getDayGaps(sel.id,sd,sel.startTime||"09:00",sel.endTime||"18:00",null);return gaps;})():[];
       const availH=(sd&&ed)?helpers.filter(h=>!isHelperBusyInRange(h.id,sd,ed,allBk,st,et)):helpers;
       const busyH=(sd&&ed)?helpers.filter(h=>isHelperBusyInRange(h.id,sd,ed,allBk,st,et)):[];
-      /* 해당 시간대 이미 배정된 도우미 (같은 request의) */
       const alreadyAssigned=(sd&&ed)?existingBks.filter(b=>{if(!b.startDate||!b.endDate)return false;if(sd>b.endDate||b.startDate>ed)return false;if(st&&et&&b.startTime&&b.endTime)return st<b.endTime&&b.startTime<et;return true;}):[];
       return <div className="modal-overlay" onClick={()=>setBookingModal(false)}><div className="modal-box" onClick={e=>e.stopPropagation()}>
         <h3 className="font-bold text-lg mb-2">도우미 추가</h3>
         <p className="text-xs text-gray-500 mb-3">{sel.name} | 전체 기간: {sel.startDate||"미정"} ~ {sel.endDate||"미정"}</p>
         {existingBks.length>0&&<div className="bg-gray-50 rounded-lg p-3 mb-3"><p className="text-xs font-semibold text-gray-600 mb-2">이미 배정됨 ({existingBks.length}명)</p><div className="space-y-1">{existingBks.sort((a,b)=>(a.startDate||"").localeCompare(b.startDate||"")).map(b=>{const h=helpers.find(x=>x.id===b.helperId);return <div key={b.id} className="flex items-center gap-2 text-xs"><span className="w-2 h-2 rounded-full bg-green-400"/><span className="font-medium">{h?h.name:"?"}</span><span className="text-gray-400">{b.startDate}~{b.endDate} {b.startTime}~{b.endTime}</span></div>;})}</div></div>}
         <div className="grid grid-cols-2 gap-3"><Inp label="시작일" type="date" value={bkForm.startDate} onChange={e=>{setBkForm(p=>({...p,startDate:e.target.value}));setBkError("");}}/><Inp label="종료일" type="date" value={bkForm.endDate} onChange={e=>{setBkForm(p=>({...p,endDate:e.target.value}));setBkError("");}}/></div>
-        {alreadyAssigned.length>0&&<p className="text-xs text-blue-600 bg-blue-50 rounded-lg p-2">{"\u{1F4CB}"} 해당 시간대 {alreadyAssigned.length}명 배정중 - 추가 배정 가능</p>}
+        {timeOverlap&&<p className="text-xs text-red-600 bg-red-50 rounded-lg p-2">{"\u26A0\uFE0F"} 해당 시간대에 이미 도우미가 배정되어 있습니다.</p>}
+        {sd&&ed&&gapInfo.length>0&&!timeOverlap&&<p className="text-xs text-blue-600 bg-blue-50 rounded-lg p-2">{"\u{1F4CB}"} 빈 시간: {gapInfo.map(g=>minToStr(g.s)+"~"+minToStr(g.e)).join(", ")}</p>}
+        {sd&&ed&&gapInfo.length===0&&existingBks.length>0&&<p className="text-xs text-orange-600 bg-orange-50 rounded-lg p-2">{"\u26A0\uFE0F"} 이 날짜에 빈 시간이 없습니다.</p>}
         <div className="grid grid-cols-2 gap-3"><Inp label="시작시간" type="time" value={bkForm.startTime} onChange={e=>setBkForm(p=>({...p,startTime:e.target.value}))}/><Inp label="종료시간" type="time" value={bkForm.endTime} onChange={e=>setBkForm(p=>({...p,endTime:e.target.value}))}/></div>
         {sd&&ed&&<p className="text-xs mb-2">{availH.length>0?<span className="text-green-600 font-semibold">{"\u2705"} 가능 {availH.length}명</span>:<span className="text-red-600 font-semibold">{"\u26A0\uFE0F"} 가능한 도우미 없음</span>}</p>}
-        {sameHelperDup&&<p className="text-xs text-red-600 font-semibold bg-red-50 rounded-lg p-2">{"\u26A0\uFE0F"} 같은 도우미가 이미 해당 시간에 배정되어 있습니다.</p>}
-        <label className="block text-xs font-medium text-gray-600 mb-1">도우미</label><div className="space-y-1 mb-3 max-h-40 overflow-y-auto">{availH.map(h=><button key={h.id} onClick={()=>{setBkForm(p=>({...p,helperId:h.id}));setBkError("");}} className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-left text-xs transition ${bkForm.helperId===h.id?"border-indigo-400 bg-indigo-50":"border-gray-200 hover:bg-gray-50"}`}><span className="font-semibold">{h.name}</span><span className="text-gray-400">{h.area} | {"\u2B50"}{h.rating}</span></button>)}{busyH.length>0&&<div className="border-t mt-2 pt-2"><p className="text-xs text-gray-400 mb-1">다른 예약 겹침 ({busyH.length}명)</p>{busyH.map(h=><div key={h.id} className="px-3 py-1 text-xs text-gray-400 line-through">{h.name}</div>)}</div>}</div>
+        <label className="block text-xs font-medium text-gray-600 mb-1">도우미</label>
+        <div className="space-y-1 mb-3 max-h-40 overflow-y-auto">{availH.map(h=><button key={h.id} onClick={()=>{setBkForm(p=>({...p,helperId:h.id}));setBkError("");}} className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-left text-xs transition ${bkForm.helperId===h.id?"border-indigo-400 bg-indigo-50":"border-gray-200 hover:bg-gray-50"}`}><span className="font-semibold">{h.name}</span><span className="text-gray-400">{h.area} | {"\u2B50"}{h.rating}</span></button>)}{busyH.length>0&&<div className="border-t mt-2 pt-2"><p className="text-xs text-gray-400 mb-1">다른 예약 겹침 ({busyH.length}명)</p>{busyH.map(h=><div key={h.id} className="px-3 py-1 text-xs text-gray-400 line-through">{h.name}</div>)}</div>}</div>
         <Inp label="금액 (원)" type="number" placeholder="비워두면 자동" value={bkForm.fee} onChange={e=>setBkForm(p=>({...p,fee:e.target.value}))}/>
         {bkError&&<p className="text-xs text-red-600 font-semibold bg-red-50 rounded-lg p-2">{bkError}</p>}
-        <div className="flex gap-2 mt-3"><Btn onClick={addBooking} disabled={!bkForm.helperId||sameHelperDup}>추가</Btn><Btn v="secondary" onClick={()=>setBookingModal(false)}>취소</Btn></div>
+        <div className="flex gap-2 mt-3"><Btn onClick={addBooking} disabled={!bkForm.helperId||timeOverlap}>추가</Btn><Btn v="secondary" onClick={()=>setBookingModal(false)}>취소</Btn></div>
       </div></div>;
     })()}
 
@@ -489,14 +420,8 @@ function Requests({requests,helpers,bookings:allBookings,reload}){
       return <div className="modal-overlay" onClick={()=>setEditBkModal(null)}><div className="modal-box" onClick={e=>e.stopPropagation()}>
         <h3 className="font-bold text-lg mb-2">예약 수정</h3>
         <p className="text-xs text-gray-500 mb-3">{sel.name} | 기존: {editBkModal.startDate}~{editBkModal.endDate} {editBkModal.startTime}~{editBkModal.endTime}</p>
-        <div className="grid grid-cols-2 gap-3">
-          <Inp label="시작일" type="date" value={editBkForm.startDate} onChange={e=>setEditBkForm(p=>({...p,startDate:e.target.value}))}/>
-          <Inp label="종료일" type="date" value={editBkForm.endDate} onChange={e=>setEditBkForm(p=>({...p,endDate:e.target.value}))}/>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Inp label="시작시간" type="time" value={editBkForm.startTime} onChange={e=>setEditBkForm(p=>({...p,startTime:e.target.value}))}/>
-          <Inp label="종료시간" type="time" value={editBkForm.endTime} onChange={e=>setEditBkForm(p=>({...p,endTime:e.target.value}))}/>
-        </div>
+        <div className="grid grid-cols-2 gap-3"><Inp label="시작일" type="date" value={editBkForm.startDate} onChange={e=>setEditBkForm(p=>({...p,startDate:e.target.value}))}/><Inp label="종료일" type="date" value={editBkForm.endDate} onChange={e=>setEditBkForm(p=>({...p,endDate:e.target.value}))}/></div>
+        <div className="grid grid-cols-2 gap-3"><Inp label="시작시간" type="time" value={editBkForm.startTime} onChange={e=>setEditBkForm(p=>({...p,startTime:e.target.value}))}/><Inp label="종료시간" type="time" value={editBkForm.endTime} onChange={e=>setEditBkForm(p=>({...p,endTime:e.target.value}))}/></div>
         {esd&&eed&&<p className="text-xs mb-2">{availH.length>0?<span className="text-green-600 font-semibold">{"\u2705"} 가능 {availH.length}명</span>:<span className="text-red-600 font-semibold">{"\u26A0\uFE0F"} 가능한 도우미 없음</span>}</p>}
         <label className="block text-xs font-medium text-gray-600 mb-1">도우미</label>
         <div className="space-y-1 mb-3 max-h-40 overflow-y-auto">
@@ -505,11 +430,7 @@ function Requests({requests,helpers,bookings:allBookings,reload}){
         </div>
         <Inp label="금액 (원)" type="number" value={editBkForm.fee} onChange={e=>setEditBkForm(p=>({...p,fee:e.target.value}))}/>
         {bkError&&<p className="text-xs text-red-600 font-semibold bg-red-50 rounded-lg p-2">{bkError}</p>}
-        <div className="flex gap-2 mt-3">
-          <Btn onClick={saveEditBk}>저장</Btn>
-          <Btn v="danger" onClick={()=>{setEditBkModal(null);removeBooking(editBkModal.id);}}>삭제</Btn>
-          <Btn v="secondary" onClick={()=>setEditBkModal(null)}>취소</Btn>
-        </div>
+        <div className="flex gap-2 mt-3"><Btn onClick={saveEditBk}>저장</Btn><Btn v="danger" onClick={()=>{setEditBkModal(null);removeBooking(editBkModal.id);}}>삭제</Btn><Btn v="secondary" onClick={()=>setEditBkModal(null)}>취소</Btn></div>
       </div></div>;
     })()}
   </div>;
@@ -520,106 +441,48 @@ function Requests({requests,helpers,bookings:allBookings,reload}){
    ═════════════════════════════ */
 function CallManage({callRequests,reload}){
   const [filter,setFilter]=useState("all");const [sel,setSel]=useState(null);const [memoText,setMemoText]=useState("");
-
   const filtered=(callRequests||[]).filter(c=>filter==="all"||c.status===filter).slice().reverse();
-
-  const updateCall=(id,updates)=>{
-    const db=getDB();if(!db.callRequests)db.callRequests=[];
-    const idx=db.callRequests.findIndex(c=>c.id===id);if(idx<0)return;
-    db.callRequests[idx]={...db.callRequests[idx],...updates};
-    saveDB(db);reload();setSel(db.callRequests[idx]);
-  };
-
-  const saveMemo=()=>{
-    if(!sel)return;
-    const db=getDB();const idx=db.callRequests.findIndex(c=>c.id===sel.id);if(idx<0)return;
-    db.callRequests[idx].memo=(db.callRequests[idx].memo?db.callRequests[idx].memo+"\n":"")+`[${new Date().toLocaleString("ko-KR")}] ${memoText}`;
-    saveDB(db);reload();setSel(db.callRequests[idx]);setMemoText("");
-  };
-
-  useEffect(()=>{if(sel){const latest=(callRequests||[]).find(c=>c.id===sel.id);if(latest)setSel(latest);}},[callRequests]);
-
+  const updateCall=(id,updates)=>{const db=getDB();if(!db.callRequests)db.callRequests=[];const idx=db.callRequests.findIndex(c=>c.id===id);if(idx<0)return;db.callRequests[idx]={...db.callRequests[idx],...updates};saveDB(db);reload();setSel(db.callRequests[idx]);};
+  const addMemo=(id)=>{const db=getDB();const idx=db.callRequests.findIndex(c=>c.id===id);if(idx<0)return;if(!db.callRequests[idx].memos)db.callRequests[idx].memos=[];db.callRequests[idx].memos.push({text:memoText,createdAt:new Date().toISOString()});saveDB(db);reload();setSel(db.callRequests[idx]);setMemoText("");};
+  if(sel)return <div className="fade-in space-y-4">
+    <button onClick={()=>setSel(null)} className="flex items-center gap-1 text-sm text-indigo-600 hover:text-indigo-800 font-medium">{"\u25C0"} 목록으로</button>
+    <div className="bg-white rounded-xl border border-gray-100 p-5 space-y-3">
+      <div className="flex items-center justify-between"><h3 className="font-bold">{sel.name}</h3><Badge status={sel.status} map={CALL_ST}/></div>
+      <p className="text-sm text-gray-600">{sel.phone}</p>
+      {sel.message&&<div className="bg-gray-50 rounded-lg p-3 text-sm">{sel.message}</div>}
+      <div className="flex gap-2 flex-wrap">{[["called","통화완료"],["converted","신청전환"],["closed","종료"]].filter(([s])=>s!==sel.status).map(([s,l])=><Btn key={s} v={s==="closed"?"danger":"primary"} onClick={()=>updateCall(sel.id,{status:s})}>{l}</Btn>)}</div>
+      <div className="max-h-40 overflow-y-auto space-y-2">{(sel.memos||[]).slice().reverse().map((m,i)=><div key={i} className="bg-gray-50 rounded-lg p-3"><p className="text-sm whitespace-pre-wrap">{m.text}</p><p className="text-xs text-gray-400 mt-1">{new Date(m.createdAt).toLocaleDateString("ko-KR")}</p></div>)}</div>
+      <div className="flex gap-2"><textarea value={memoText} onChange={e=>setMemoText(e.target.value)} rows={2} placeholder="메모 입력..." className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm resize-none"/><Btn onClick={()=>addMemo(sel.id)} disabled={!memoText.trim()} cls="self-end">저장</Btn></div>
+    </div>
+  </div>;
   return <div className="fade-in space-y-4">
-    <div className="flex items-center justify-between"><h2 className="text-xl font-bold text-gray-900">전화 상담 관리</h2><span className="text-sm text-gray-500">{filtered.length}건</span></div>
-    <div className="flex gap-2 flex-wrap">
-      {[{v:"all",l:"전체"},{v:"pending",l:"대기"},{v:"called",l:"통화완료"},{v:"converted",l:"신청전환"},{v:"closed",l:"종료"}].map(f=><button key={f.v} onClick={()=>setFilter(f.v)} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${filter===f.v?"bg-indigo-500 text-white":"bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"}`}>{f.l}</button>)}
-    </div>
-
-    <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-      <div className="lg:col-span-2 space-y-2 max-h-screen overflow-y-auto pr-1">
-        {filtered.length===0?<p className="text-sm text-gray-400 py-8 text-center">상담 요청이 없습니다</p>:filtered.map(c=><div key={c.id} onClick={()=>setSel(c)} className={`bg-white rounded-xl p-4 border cursor-pointer transition hover:shadow-md ${sel&&sel.id===c.id?"border-indigo-400 ring-2 ring-indigo-100":"border-gray-100"}`}>
-          <div className="flex items-center justify-between mb-1"><p className="font-semibold text-sm">{c.name}</p><Badge status={c.status} map={CALL_ST}/></div>
-          <p className="text-xs text-gray-500">{c.phone} | {new Date(c.createdAt).toLocaleDateString("ko-KR")} {new Date(c.createdAt).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})}</p>
-          {c.message&&<p className="text-xs text-gray-400 mt-1 truncate">{c.message}</p>}
-        </div>)}
-      </div>
-
-      {sel?<div className="lg:col-span-3 space-y-4">
-        <div className="bg-white rounded-xl border border-gray-100 p-5 space-y-4">
-          <div className="flex items-center justify-between"><h3 className="font-bold text-gray-900">상담 상세</h3><Badge status={sel.status} map={CALL_ST}/></div>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-            <div><p className="text-xs text-gray-400">이름</p><p className="font-medium">{sel.name}</p></div>
-            <div><p className="text-xs text-gray-400">연락처</p><p className="font-medium">{sel.phone}</p></div>
-            <div><p className="text-xs text-gray-400">접수일시</p><p className="font-medium">{new Date(sel.createdAt).toLocaleString("ko-KR")}</p></div>
-            <div><p className="text-xs text-gray-400">상태</p><Badge status={sel.status} map={CALL_ST}/></div>
-          </div>
-          {sel.message&&<div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500 mb-1">문의 내용</p><p className="text-sm text-gray-800">{sel.message}</p></div>}
-
-          <div className="border-t pt-3">
-            <p className="text-xs font-semibold text-gray-600 mb-2">상태 변경</p>
-            <div className="flex gap-2 flex-wrap">
-              {sel.status==="pending"&&<><Btn v="primary" onClick={()=>updateCall(sel.id,{status:"called"})}>통화 완료</Btn><Btn v="success" onClick={()=>updateCall(sel.id,{status:"converted"})}>신청 전환</Btn><Btn v="danger" onClick={()=>updateCall(sel.id,{status:"closed"})}>종료</Btn></>}
-              {sel.status==="called"&&<><Btn v="success" onClick={()=>updateCall(sel.id,{status:"converted"})}>신청 전환</Btn><Btn v="danger" onClick={()=>updateCall(sel.id,{status:"closed"})}>종료</Btn></>}
-              {(sel.status==="converted"||sel.status==="closed")&&<p className="text-xs text-gray-400">변경 가능한 상태가 없습니다</p>}
-            </div>
-          </div>
-        </div>
-
-        {/* Memo */}
-        <div className="bg-white rounded-xl border border-gray-100 p-5 space-y-3">
-          <h4 className="font-bold text-sm text-gray-900">{"\u{1F4CC}"} 상담 메모</h4>
-          {sel.memo?<div className="bg-gray-50 rounded-lg p-3 max-h-40 overflow-y-auto"><p className="text-sm text-gray-800 whitespace-pre-wrap">{sel.memo}</p></div>:<p className="text-xs text-gray-400">아직 메모가 없습니다</p>}
-          <div className="flex gap-2"><textarea value={memoText} onChange={e=>setMemoText(e.target.value)} rows={2} placeholder="상담 내용 기록..." className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"/><Btn onClick={saveMemo} disabled={!memoText.trim()} cls="self-end">저장</Btn></div>
-        </div>
-      </div>:<div className="lg:col-span-3 flex items-center justify-center py-20 text-gray-400 text-sm">좌측에서 상담을 선택하세요</div>}
-    </div>
+    <h2 className="text-xl font-bold text-gray-900">전화 상담 관리</h2>
+    <div className="flex gap-2">{[["all","전체"],["pending","대기"],["called","통화완료"],["converted","신청전환"],["closed","종료"]].map(([v,l])=><button key={v} onClick={()=>setFilter(v)} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${filter===v?"bg-indigo-500 text-white":"bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"}`}>{l}</button>)}</div>
+    {filtered.length===0?<p className="text-sm text-gray-400 py-8 text-center">상담 내역이 없습니다</p>:<div className="space-y-2">{filtered.map(c=><div key={c.id} onClick={()=>{setSel(c);setMemoText("");}} className="bg-white rounded-xl border border-gray-100 p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition"><div><p className="font-semibold text-sm">{c.name}</p><p className="text-xs text-gray-500">{c.phone} | {new Date(c.createdAt).toLocaleDateString("ko-KR")}</p></div><Badge status={c.status} map={CALL_ST}/></div>)}</div>}
   </div>;
 }
 
-/* ═══════════════════════
-   4. Helper Management
-   ═══════════════════════ */
+/* ═══════════════
+   4. Helpers
+   ═══════════════ */
 function Helpers({helpers,reload}){
-  const [editing,setEditing]=useState(null);
-  const [f,sf]=useState({name:"",gender:"여",phone:"",bank:"",account:"",career:"",note:"",availableTime:"",area:"",rating:0});
-  const up=(k,v)=>sf(p=>({...p,[k]:v}));
-
-  const startEdit=(h)=>{setEditing(h?h.id:"new");sf(h?{...h}:{name:"",gender:"여",phone:"",bank:"",account:"",career:"",note:"",availableTime:"",area:"",rating:0});};
-  const save=()=>{
-    if(!f.name||!f.phone){alert("이름과 연락처는 필수입니다.");return;}
-    const db=getDB();
-    if(editing==="new"){db.helpers.push({...f,id:genId(db),rating:Number(f.rating)||0});}
-    else{const idx=db.helpers.findIndex(h=>h.id===editing);if(idx>=0) db.helpers[idx]={...db.helpers[idx],...f,rating:Number(f.rating)||0};}
-    saveDB(db);reload();setEditing(null);
-  };
-  const del=(id)=>{if(!confirm("정말 삭제하시겠습니까?"))return;const db=getDB();db.helpers=db.helpers.filter(h=>h.id!==id);saveDB(db);reload();};
-
+  const [editing,setEditing]=useState(null);const blank={name:"",phone:"",gender:"여",bank:"",account:"",career:"",availableTime:"09:00~18:00",area:"",rating:4.5,note:""};
+  const [f,setF]=useState(blank);const up=(k,v)=>setF(p=>({...p,[k]:v}));
+  const startEdit=(h)=>{setEditing(h.id);setF({name:h.name||"",phone:h.phone||"",gender:h.gender||"여",bank:h.bank||"",account:h.account||"",career:h.career||"",availableTime:h.availableTime||"",area:h.area||"",rating:h.rating||4.5,note:h.note||""});};
+  const save=()=>{const db=getDB();if(editing==="new"){db.helpers.push({id:genId(db),...f,rating:Number(f.rating)});}else{const idx=db.helpers.findIndex(h=>h.id===editing);if(idx>=0)db.helpers[idx]={...db.helpers[idx],...f,rating:Number(f.rating)};}saveDB(db);reload();setEditing(null);};
+  const del=(id)=>{if(!confirm("삭제하시겠습니까?"))return;const db=getDB();db.helpers=db.helpers.filter(h=>h.id!==id);saveDB(db);reload();};
   return <div className="fade-in space-y-4">
-    <div className="flex items-center justify-between"><h2 className="text-xl font-bold text-gray-900">도우미 관리</h2><Btn onClick={()=>startEdit(null)}>+ 도우미 추가</Btn></div>
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {helpers.map(h=><div key={h.id} className="bg-white rounded-xl border border-gray-100 p-5 space-y-3">
-        <div className="flex items-center justify-between"><p className="font-bold">{h.name}</p><span className="text-xs text-yellow-600">{"\u2B50"} {h.rating}</span></div>
-        <div className="text-xs text-gray-500 space-y-1"><p>{h.phone}</p><p>{h.career}</p><p>{h.area} | {h.availableTime}</p>{h.note&&<p className="text-gray-400">{h.note}</p>}</div>
-        <div className="flex gap-2"><Btn v="secondary" onClick={()=>startEdit(h)}>수정</Btn><Btn v="danger" onClick={()=>del(h.id)}>삭제</Btn></div>
-      </div>)}
-    </div>
+    <div className="flex items-center justify-between"><h2 className="text-xl font-bold text-gray-900">도우미 관리</h2><Btn onClick={()=>{setEditing("new");setF(blank);}}>+ 추가</Btn></div>
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">{helpers.map(h=><div key={h.id} className="bg-white rounded-xl border border-gray-100 p-4 space-y-2">
+      <div className="flex items-center justify-between"><p className="font-bold">{h.name}</p><span className="text-xs text-yellow-600">{"\u2B50"} {h.rating}</span></div>
+      <div className="text-xs text-gray-500 space-y-1"><p>{h.phone}</p><p>{h.career}</p><p>{h.area} | {h.availableTime}</p>{h.note&&<p className="text-gray-400">{h.note}</p>}</div>
+      <div className="flex gap-2"><Btn v="secondary" onClick={()=>startEdit(h)}>수정</Btn><Btn v="danger" onClick={()=>del(h.id)}>삭제</Btn></div>
+    </div>)}</div>
     {editing!==null&&<div className="modal-overlay" onClick={()=>setEditing(null)}><div className="modal-box" onClick={e=>e.stopPropagation()}>
       <h3 className="font-bold text-lg mb-4">{editing==="new"?"도우미 추가":"도우미 수정"}</h3>
-      <Inp label="이름" value={f.name} onChange={e=>up("name",e.target.value)}/>
-      <Inp label="연락처" value={f.phone} onChange={e=>up("phone",e.target.value)}/>
+      <Inp label="이름" value={f.name} onChange={e=>up("name",e.target.value)}/><Inp label="연락처" value={f.phone} onChange={e=>up("phone",e.target.value)}/>
       <Sel label="성별" value={f.gender} onChange={e=>up("gender",e.target.value)} options={[{value:"여",label:"여성"},{value:"남",label:"남성"}]}/>
-      <Inp label="은행" value={f.bank} onChange={e=>up("bank",e.target.value)}/>
-      <Inp label="계좌번호" value={f.account} onChange={e=>up("account",e.target.value)}/>
+      <Inp label="은행" value={f.bank} onChange={e=>up("bank",e.target.value)}/><Inp label="계좌번호" value={f.account} onChange={e=>up("account",e.target.value)}/>
       <TA label="경력" value={f.career} onChange={e=>up("career",e.target.value)}/>
       <Inp label="활동시간" value={f.availableTime} onChange={e=>up("availableTime",e.target.value)} placeholder="09:00~18:00"/>
       <Inp label="활동지역" value={f.area} onChange={e=>up("area",e.target.value)}/>
@@ -635,154 +498,39 @@ function Helpers({helpers,reload}){
    ═══════════════════════════ */
 function Settlement({bookings,helpers,requests,reload}){
   const [memoId,setMemoId]=useState(null);const [memoText,setMemoText]=useState("");
-  const [filter,setFilter]=useState("all"); // all, done_post, cancel_fee, pending, completed
+  const [filter,setFilter]=useState("all");
   const updateBooking=(id,updates)=>{const db=getDB();const idx=db.bookings.findIndex(b=>b.id===id);if(idx>=0){db.bookings[idx]={...db.bookings[idx],...updates};saveDB(db);reload();}};
   const saveBkMemo=(id)=>{const db=getDB();const idx=db.bookings.findIndex(b=>b.id===id);if(idx>=0){db.bookings[idx].memo=(db.bookings[idx].memo?db.bookings[idx].memo+"\n":"")+`[${new Date().toLocaleString("ko-KR")}] ${memoText}`;saveDB(db);reload();}setMemoId(null);setMemoText("");};
-
-  /* ── 정산 대상 신청 필터 ── */
-  /* done_post: 완료(정산후) 상태, cancel_fee: 중단/취소 중 cancelFee>0 */
-  const settlementRequests=requests.filter(r=>{
-    if(r.status==="done_post")return true;
-    if((r.status==="suspended"||r.status==="cancelled")&&Number(r.cancelFee)>0)return true;
-    return false;
-  });
-
-  /* ── 신청별 금액 집계 ── */
-  const reqFeeMap={};
-  requests.forEach(r=>{
-    const baseFee=Number(r.baseFee)||0;
-    const deposit=Number(r.deposit)||0;
-    const extraFee=Number(r.extraFee)||0;
-    const cancelFee=Number(r.cancelFee)||0;
-    const grandTotal=baseFee+extraFee;
-    const reqBks=bookings.filter(b=>b.requestId===r.id&&b.status==="active");
-    reqFeeMap[r.id]={name:r.name,status:r.status,deposit,baseFee,extraFee,cancelFee,grandTotal,bookingCount:reqBks.length,
-      settled:reqBks.filter(b=>b.settlementStatus==="completed").length,
-      pending:reqBks.filter(b=>b.settlementStatus!=="completed").length};
-  });
-
-  /* ── 전체 합계 (정산 대상만) ── */
+  const settlementRequests=requests.filter(r=>{if(r.status==="done_post")return true;if((r.status==="suspended"||r.status==="cancelled")&&Number(r.cancelFee)>0)return true;return false;});
+  const reqFeeMap={};requests.forEach(r=>{const baseFee=Number(r.baseFee)||0;const deposit=Number(r.deposit)||0;const extraFee=Number(r.extraFee)||0;const cancelFee=Number(r.cancelFee)||0;const grandTotal=baseFee+extraFee;const reqBks=bookings.filter(b=>b.requestId===r.id&&b.status==="active");reqFeeMap[r.id]={name:r.name,status:r.status,deposit,baseFee,extraFee,cancelFee,grandTotal,bookingCount:reqBks.length,settled:reqBks.filter(b=>b.settlementStatus==="completed").length,pending:reqBks.filter(b=>b.settlementStatus!=="completed").length};});
   const allReqsWithBookings=settlementRequests.filter(r=>bookings.some(b=>b.requestId===r.id&&b.status==="active")||Number(r.cancelFee)>0);
-  const totals=allReqsWithBookings.reduce((acc,r)=>{
-    const f=reqFeeMap[r.id];if(!f)return acc;
-    acc.deposit+=f.deposit;acc.baseFee+=f.baseFee;acc.extraFee+=f.extraFee;acc.cancelFee+=f.cancelFee;acc.grandTotal+=f.grandTotal;
-    return acc;
-  },{deposit:0,baseFee:0,extraFee:0,cancelFee:0,grandTotal:0});
-
-  /* ── 필터된 예약 ── */
+  const totals=allReqsWithBookings.reduce((acc,r)=>{const f=reqFeeMap[r.id];if(!f)return acc;acc.deposit+=f.deposit;acc.baseFee+=f.baseFee;acc.extraFee+=f.extraFee;acc.cancelFee+=f.cancelFee;acc.grandTotal+=f.grandTotal;return acc;},{deposit:0,baseFee:0,extraFee:0,cancelFee:0,grandTotal:0});
   const settlementReqIds=new Set(settlementRequests.map(r=>r.id));
   const settlementBookings=bookings.filter(b=>settlementReqIds.has(b.requestId));
-  const filtered=settlementBookings.filter(b=>{
-    const r=requests.find(x=>x.id===b.requestId);
-    if(filter==="done_post")return r&&r.status==="done_post";
-    if(filter==="cancel_fee")return r&&(r.status==="suspended"||r.status==="cancelled")&&Number(r.cancelFee)>0;
-    if(filter==="pending")return b.settlementStatus!=="completed";
-    if(filter==="completed")return b.settlementStatus==="completed";
-    return true;
-  });
-
+  const filtered=settlementBookings.filter(b=>{const r=requests.find(x=>x.id===b.requestId);if(filter==="done_post")return r&&r.status==="done_post";if(filter==="cancel_fee")return r&&(r.status==="suspended"||r.status==="cancelled")&&Number(r.cancelFee)>0;if(filter==="pending")return b.settlementStatus!=="completed";if(filter==="completed")return b.settlementStatus==="completed";return true;});
   return <div className="fade-in space-y-4">
     <h2 className="text-xl font-bold text-gray-900">예약 / 정산 관리</h2>
-
-    {/* ── 합계 카드 ── */}
     <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-      <div className="bg-white rounded-xl border border-gray-100 p-4 text-center">
-        <p className="text-xs text-gray-500 mb-1">총 예약금</p>
-        <p className="font-bold text-lg text-indigo-600">{totals.deposit.toLocaleString()}원</p>
-      </div>
-      <div className="bg-white rounded-xl border border-gray-100 p-4 text-center">
-        <p className="text-xs text-gray-500 mb-1">총 원금</p>
-        <p className="font-bold text-lg text-gray-800">{totals.baseFee.toLocaleString()}원</p>
-      </div>
-      <div className="bg-white rounded-xl border border-gray-100 p-4 text-center">
-        <p className="text-xs text-gray-500 mb-1">총 추가금</p>
-        <p className="font-bold text-lg text-orange-600">{totals.extraFee.toLocaleString()}원</p>
-      </div>
-      <div className="bg-white rounded-xl border border-gray-100 p-4 text-center">
-        <p className="text-xs text-gray-500 mb-1">중도/취소 수수료</p>
-        <p className="font-bold text-lg text-red-600">{totals.cancelFee.toLocaleString()}원</p>
-      </div>
-      <div className="bg-white rounded-xl border border-gray-100 p-4 text-center">
-        <p className="text-xs text-gray-500 mb-1">추가금포함 총액</p>
-        <p className="font-bold text-lg text-green-600">{totals.grandTotal.toLocaleString()}원</p>
-      </div>
+      {[{l:"총 예약금",v:totals.deposit,c:"text-indigo-600"},{l:"총 원금",v:totals.baseFee,c:"text-gray-800"},{l:"총 추가금",v:totals.extraFee,c:"text-orange-600"},{l:"중도/취소 수수료",v:totals.cancelFee,c:"text-red-600"},{l:"총액",v:totals.grandTotal,c:"text-green-600"}].map((s,i)=><div key={i} className="bg-white rounded-xl border border-gray-100 p-4 text-center"><p className="text-xs text-gray-500 mb-1">{s.l}</p><p className={`font-bold text-lg ${s.c}`}>{s.v.toLocaleString()}원</p></div>)}
     </div>
-
-    {/* ── 신청별 금액 요약 테이블 ── */}
-    {allReqsWithBookings.length>0&&<div className="bg-white rounded-xl border border-gray-100 p-4">
-      <p className="font-semibold text-sm text-gray-700 mb-3">정산 대상 신청 요약</p>
-      <div className="overflow-x-auto"><table className="w-full text-sm">
-        <thead><tr className="bg-gray-50 text-xs text-gray-500">
-          <th className="px-3 py-2 text-left">신청자</th>
-          <th className="px-3 py-2 text-center">상태</th>
-          <th className="px-3 py-2 text-right">예약금</th>
-          <th className="px-3 py-2 text-right">원금</th>
-          <th className="px-3 py-2 text-right">추가금</th>
-          <th className="px-3 py-2 text-right">중도/취소</th>
-          <th className="px-3 py-2 text-right">총액</th>
-          <th className="px-3 py-2 text-center">정산현황</th>
-        </tr></thead>
-        <tbody>{allReqsWithBookings.map(r=>{const f=reqFeeMap[r.id];if(!f)return null;const stInfo=ST[f.status]||ST.applied;return <tr key={r.id} className="border-t border-gray-100 hover:bg-gray-50">
-          <td className="px-3 py-2 font-medium">{f.name}</td>
-          <td className="px-3 py-2 text-center"><span className={`px-2 py-0.5 rounded-full text-xs font-bold ${stInfo.c}`}>{stInfo.l}</span></td>
-          <td className="px-3 py-2 text-right text-indigo-600">{f.deposit.toLocaleString()}원</td>
-          <td className="px-3 py-2 text-right">{f.baseFee.toLocaleString()}원</td>
-          <td className="px-3 py-2 text-right text-orange-600">{f.extraFee.toLocaleString()}원</td>
-          <td className="px-3 py-2 text-right text-red-600">{f.cancelFee>0?f.cancelFee.toLocaleString()+"원":"-"}</td>
-          <td className="px-3 py-2 text-right font-bold text-green-600">{f.grandTotal.toLocaleString()}원</td>
-          <td className="px-3 py-2 text-center"><span className="text-green-600">{f.settled}완료</span> / <span className="text-orange-600">{f.pending}대기</span></td>
-        </tr>;})}</tbody>
-      </table></div>
-    </div>}
-
-    {/* ── 필터 ── */}
-    <div className="flex gap-2 flex-wrap">
-      {[["all","전체"],["done_post","완료(정산후)"],["cancel_fee","중단/취소(수수료)"],["pending","정산대기"],["completed","정산완료"]].map(([v,l])=><button key={v} onClick={()=>setFilter(v)} className={`px-3 py-1 rounded-full text-xs font-medium transition ${filter===v?"bg-indigo-600 text-white":"bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>{l}</button>)}
-    </div>
-
-    {/* ── 예약 목록 ── */}
+    <div className="flex gap-2 flex-wrap">{[["all","전체"],["done_post","완료(정산후)"],["cancel_fee","중단/취소(수수료)"],["pending","정산대기"],["completed","정산완료"]].map(([v,l])=><button key={v} onClick={()=>setFilter(v)} className={`px-3 py-1 rounded-full text-xs font-medium transition ${filter===v?"bg-indigo-600 text-white":"bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>{l}</button>)}</div>
     {filtered.length===0?<p className="text-sm text-gray-400 py-8 text-center">정산 대상 내역이 없습니다</p>:<div className="space-y-3">{filtered.slice().reverse().map(b=>{
-      const r=requests.find(x=>x.id===b.requestId);
-      const h=helpers.find(x=>x.id===b.helperId);
-      /* 신청서 기준 금액 */
-      const rDeposit=r?Number(r.deposit)||0:0;
-      const rBaseFee=r?Number(r.baseFee)||0:0;
-      const rExtraFee=r?Number(r.extraFee)||0:0;
-      const rCancelFee=r?Number(r.cancelFee)||0:0;
-      const rGrandTotal=rBaseFee+rExtraFee;
-      const rStatus=r?r.status:"";
-      const rStInfo=ST[rStatus]||ST.applied;
-      /* 예약건 개별 금액 (시간 기준 fallback) */
-      const hours=b.startTime&&b.endTime?Math.max(1,(parseInt(b.endTime)-parseInt(b.startTime))):8;
-      const bkFee=b.fee||hours*15000;
-      const commission=Math.round(bkFee*0.1);
+      const r=requests.find(x=>x.id===b.requestId);const h=helpers.find(x=>x.id===b.helperId);
+      const rCancelFee=r?Number(r.cancelFee)||0:0;const rBaseFee=r?Number(r.baseFee)||0:0;const rExtraFee=r?Number(r.extraFee)||0:0;const rDeposit=r?Number(r.deposit)||0:0;const rGrandTotal=rBaseFee+rExtraFee;
+      const hours=b.startTime&&b.endTime?Math.max(1,(parseInt(b.endTime)-parseInt(b.startTime))):8;const bkFee=b.fee||hours*15000;const commission=Math.round(bkFee*0.1);
+      const rStInfo=r?ST[r.status]||ST.applied:ST.applied;
       return <div key={b.id} className="bg-white rounded-xl border border-gray-100 p-5 space-y-3">
-        <div className="flex items-center justify-between">
-          <div><p className="font-semibold text-sm">{r?r.name:"알 수 없음"} {"\u2192"} {h?h.name:"미배정"}</p><p className="text-xs text-gray-500">{b.startDate||"미정"} ~ {b.endDate||"미정"} | {b.startTime}~{b.endTime}</p></div>
-          <div className="flex items-center gap-2">
-            <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${rStInfo.c}`}>{rStInfo.l}</span>
-            <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${b.settlementStatus==="completed"?"bg-green-100 text-green-700":"bg-orange-100 text-orange-700"}`}>{b.settlementStatus==="completed"?"정산완료":"정산대기"}</span>
-          </div>
-        </div>
-        {/* 신청서 금액 정보 */}
-        {r&&(rBaseFee>0||rDeposit>0||rExtraFee>0||rCancelFee>0)&&<div className={`grid ${rCancelFee>0?"grid-cols-5":"grid-cols-4"} gap-2 text-center bg-indigo-50 rounded-lg p-3`}>
-          <div><p className="text-xs text-gray-500">예약금</p><p className="font-bold text-sm text-indigo-600">{rDeposit.toLocaleString()}원</p></div>
-          <div><p className="text-xs text-gray-500">원금</p><p className="font-bold text-sm">{rBaseFee.toLocaleString()}원</p></div>
-          <div><p className="text-xs text-gray-500">추가금</p><p className="font-bold text-sm text-orange-600">{rExtraFee.toLocaleString()}원</p></div>
-          {rCancelFee>0&&<div><p className="text-xs text-gray-500">중도/취소</p><p className="font-bold text-sm text-red-600">{rCancelFee.toLocaleString()}원</p></div>}
-          <div><p className="text-xs text-gray-500">총액</p><p className="font-bold text-sm text-green-600">{rGrandTotal.toLocaleString()}원</p></div>
-        </div>}
-        {/* 예약건 수수료 */}
+        <div className="flex items-center justify-between"><div><p className="font-semibold text-sm">{r?r.name:"?"} {"\u2192"} {h?h.name:"미배정"}</p><p className="text-xs text-gray-500">{b.startDate||"?"} ~ {b.endDate||"?"} | {b.startTime}~{b.endTime}</p></div><div className="flex items-center gap-2"><span className={`px-2 py-0.5 rounded-full text-xs font-bold ${rStInfo.c}`}>{rStInfo.l}</span><span className={`px-2 py-0.5 rounded-full text-xs font-bold ${b.settlementStatus==="completed"?"bg-green-100 text-green-700":"bg-orange-100 text-orange-700"}`}>{b.settlementStatus==="completed"?"정산완료":"정산대기"}</span></div></div>
         <div className="grid grid-cols-3 gap-4 text-center bg-gray-50 rounded-lg p-3">
           <div><p className="text-xs text-gray-500">예약 금액</p><p className="font-bold text-sm">{bkFee.toLocaleString()}원</p></div>
           <div><p className="text-xs text-gray-500">수수료(10%)</p><p className="font-bold text-sm text-red-500">{commission.toLocaleString()}원</p></div>
           <div><p className="text-xs text-gray-500">지급액</p><p className="font-bold text-sm text-green-600">{(bkFee-commission).toLocaleString()}원</p></div>
         </div>
+        {rCancelFee>0&&<div className="bg-red-50 rounded-lg p-3 text-center"><p className="text-xs text-red-500">중도/취소 수수료</p><p className="font-bold text-sm text-red-600">{rCancelFee.toLocaleString()}원</p></div>}
         {b.memo&&<div className="bg-gray-50 rounded-lg p-3"><p className="text-xs text-gray-500 mb-1">{"\u{1F4CC}"} 메모</p><p className="text-xs text-gray-700 whitespace-pre-wrap">{b.memo}</p></div>}
         <div className="flex gap-2 flex-wrap">
           {b.settlementStatus!=="completed"&&<Btn v="success" onClick={()=>updateBooking(b.id,{settlementStatus:"completed",fee:bkFee})}>정산 완료</Btn>}
           <Btn v="secondary" onClick={()=>{setMemoId(b.id);setMemoText("");}}>메모 추가</Btn>
-          <Btn v="danger" onClick={()=>{if(confirm("이 예약을 삭제하시겠습니까?")){const db=getDB();db.bookings=db.bookings.filter(x=>x.id!==b.id);saveDB(db);reload();}}}>삭제</Btn>
         </div>
         {memoId===b.id&&<div className="flex gap-2 mt-2"><textarea value={memoText} onChange={e=>setMemoText(e.target.value)} rows={2} placeholder="메모 입력..." className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm resize-none"/><Btn onClick={()=>saveBkMemo(b.id)} disabled={!memoText.trim()} cls="self-end">저장</Btn></div>}
       </div>;
@@ -794,219 +542,50 @@ function Settlement({bookings,helpers,requests,reload}){
    6. Helper Schedule - Calendar
    ═══════════════════════════════ */
 function HelperSchedule({helpers,bookings,requests,reload}){
-  const today=new Date();
-  const [weekOffset,setWeekOffset]=useState(0);
-  const [selCell,setSelCell]=useState(null); // {helperId, date}
-  const [tooltip,setTooltip]=useState(null);
-  /* Add booking from calendar */
-  const [addModal,setAddModal]=useState(null); // {helperId, date}
-  const [addForm,setAddForm]=useState({requestId:"",startDate:"",endDate:"",startTime:"09:00",endTime:"18:00",fee:""});
-
-  // Build 2-week range
+  const today=new Date();const [weekOffset,setWeekOffset]=useState(0);
   const weekStart=getWeekStart(addDays(today,weekOffset*7));
   const days=Array.from({length:14},(_,i)=>fmt(addDays(weekStart,i)));
-
-  // For each helper+day, find bookings
-  const getCell=(hId,day)=>(bookings||[]).filter(b=>b.helperId===hId&&b.status==="active"&&b.startDate&&b.endDate&&day>=b.startDate&&day<=b.endDate).map(b=>{
-    const r=(requests||[]).find(x=>x.id===b.requestId);
-    return {...b,request:r};
-  });
-
+  const getCell=(hId,day)=>(bookings||[]).filter(b=>b.helperId===hId&&b.status==="active"&&b.startDate&&b.endDate&&day>=b.startDate&&day<=b.endDate).map(b=>{const r=(requests||[]).find(x=>x.id===b.requestId);return {...b,request:r};});
   return <div className="fade-in space-y-4">
-    <div className="flex items-center justify-between">
-      <h2 className="text-xl font-bold text-gray-900">도우미 일정 (달력)</h2>
-      <div className="flex items-center gap-2">
-        <Btn v="secondary" onClick={()=>setWeekOffset(w=>w-2)}>{"\u25C0"} 이전</Btn>
-        <Btn v="secondary" onClick={()=>setWeekOffset(0)}>오늘</Btn>
-        <Btn v="secondary" onClick={()=>setWeekOffset(w=>w+2)}>다음 {"\u25B6"}</Btn>
-      </div>
+    <div className="flex items-center justify-between"><h2 className="text-xl font-bold text-gray-900">도우미 일정 (달력)</h2>
+      <div className="flex items-center gap-2"><Btn v="secondary" onClick={()=>setWeekOffset(w=>w-2)}>{"\u25C0"} 이전</Btn><Btn v="secondary" onClick={()=>setWeekOffset(0)}>오늘</Btn><Btn v="secondary" onClick={()=>setWeekOffset(w=>w+2)}>다음 {"\u25B6"}</Btn></div>
     </div>
-
-    {/* Calendar grid */}
     <div className="bg-white rounded-xl border border-gray-100 overflow-x-auto">
       <table className="w-full text-xs" style={{minWidth:"900px"}}>
-        <thead>
-          <tr className="bg-gray-50">
-            <th className="sticky left-0 bg-gray-50 z-10 px-3 py-2 text-left font-semibold text-gray-700 border-b border-r border-gray-200" style={{minWidth:"120px"}}>도우미</th>
-            {days.map(d=>{
-              const dt=new Date(d);const isToday=d===fmt(today);const isSun=dt.getDay()===0;const isSat=dt.getDay()===6;
-              return <th key={d} className={`px-1 py-2 text-center border-b border-gray-200 font-medium ${isToday?"bg-indigo-50 text-indigo-700":isSun?"text-red-500":isSat?"text-blue-500":"text-gray-600"}`} style={{minWidth:"60px"}}>
-                <div>{d.slice(5)}</div>
-                <div className="text-xs font-normal">{WDAY[dt.getDay()]}</div>
-              </th>;
-            })}
-          </tr>
-        </thead>
-        <tbody>
-          {helpers.map((h,hi)=><tr key={h.id} className="hover:bg-gray-50">
-            <td className="sticky left-0 bg-white z-10 px-3 py-2 border-b border-r border-gray-200">
-              <p className="font-semibold">{h.name}</p>
-              <p className="text-gray-400">{h.area}</p>
-            </td>
-            {days.map(d=>{
-              const cells=getCell(h.id,d);const isToday=d===fmt(today);
-              return <td key={d} className={`px-1 py-1 border-b border-gray-100 text-center cursor-pointer transition hover:bg-indigo-50 ${isToday?"bg-indigo-50 bg-opacity-30":""}`}
-                onClick={()=>{setSelCell({helperId:h.id,date:d,bookings:cells});if(cells.length===0){setAddModal({helperId:h.id,date:d});setAddForm({requestId:"",startDate:d,endDate:d,startTime:"09:00",endTime:"18:00",fee:""});}}}
-                onMouseEnter={()=>{if(cells.length>0)setTooltip({hId:h.id,day:d,cells});}}
-                onMouseLeave={()=>setTooltip(null)}>
-                {cells.length>0?cells.map((c,ci)=>{
-                  const color=COLORS[hi%COLORS.length];
-                  return <div key={ci} className={`${color} rounded px-1 py-0.5 mb-0.5 truncate text-xs font-medium`} title={c.request?c.request.name:""}>
-                    {c.request?c.request.childName||c.request.name:"예약"}
-                  </div>;
-                }):<div className="text-gray-300 py-1">{"\u00B7"}</div>}
-              </td>;
-            })}
-          </tr>)}
-        </tbody>
+        <thead><tr className="bg-gray-50">
+          <th className="sticky left-0 bg-gray-50 z-10 px-3 py-2 text-left font-semibold text-gray-700 border-b border-r border-gray-200" style={{minWidth:"120px"}}>도우미</th>
+          {days.map(d=>{const dt=new Date(d);const isToday=d===fmt(today);const isSun=dt.getDay()===0;const isSat=dt.getDay()===6;return <th key={d} className={`px-1 py-2 text-center border-b border-gray-200 font-medium ${isToday?"bg-indigo-50 text-indigo-700":isSun?"text-red-500":isSat?"text-blue-500":"text-gray-600"}`} style={{minWidth:"60px"}}><div>{d.slice(5)}</div><div className="text-xs font-normal">{WDAY[dt.getDay()]}</div></th>;})}
+        </tr></thead>
+        <tbody>{helpers.map(h=><tr key={h.id} className="border-t border-gray-100 hover:bg-gray-50">
+          <td className="sticky left-0 bg-white z-10 px-3 py-2 border-r border-gray-200"><div className="font-semibold">{h.name}</div><div className="text-gray-400">{h.area}</div></td>
+          {days.map(d=>{const cell=getCell(h.id,d);return <td key={d} className="px-1 py-1 text-center border-l border-gray-100">
+            {cell.length>0?cell.map((c,i)=><div key={i} className={`rounded px-1 py-0.5 mb-0.5 truncate text-xs ${COLORS[i%COLORS.length]}`} title={`${c.request?c.request.name:"?"} ${c.startTime||""}~${c.endTime||""}`}>{c.request?c.request.name:"?"}</div>):<span className="text-gray-300">-</span>}
+          </td>;})}
+        </tr>)}</tbody>
       </table>
     </div>
-
-    {/* Legend & Summary */}
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <div className="bg-white rounded-xl border border-gray-100 p-4">
-        <h4 className="font-bold text-sm text-gray-900 mb-3">도우미별 요약</h4>
-        <div className="space-y-2">{helpers.map((h,hi)=>{
-          const activeBks=(bookings||[]).filter(b=>b.helperId===h.id&&b.status==="active");
-          const totalDays=activeBks.reduce((sum,b)=>{
-            if(!b.startDate||!b.endDate) return sum;
-            return sum+getDaysInRange(b.startDate,b.endDate).length;
-          },0);
-          return <div key={h.id} className="flex items-center gap-3">
-            <div className={`w-3 h-3 rounded-full ${COLORS[hi%COLORS.length].split(" ")[0]}`}/>
-            <span className="font-medium text-sm flex-1">{h.name}</span>
-            <span className="text-xs text-gray-500">예약 {activeBks.length}건 / {totalDays}일</span>
-          </div>;
-        })}</div>
-      </div>
-
-      {/* Cell detail */}
-      {selCell&&<div className="bg-white rounded-xl border border-gray-100 p-4">
-        <div className="flex items-center justify-between mb-2">
-          <h4 className="font-bold text-sm text-gray-900">
-            {helpers.find(x=>x.id===selCell.helperId)?.name} - {selCell.date} ({WDAY[new Date(selCell.date).getDay()]})
-          </h4>
-          <Btn v="primary" cls="text-xs" onClick={()=>{setAddModal({helperId:selCell.helperId,date:selCell.date});setAddForm({requestId:"",startDate:selCell.date,endDate:selCell.date,startTime:"09:00",endTime:"18:00",fee:""});}}>+ 예약 추가</Btn>
-        </div>
-        {selCell.bookings.length===0?<p className="text-xs text-gray-400 py-2">이 날은 일정이 없습니다 (가능)</p>:
-        <div className="space-y-2">{selCell.bookings.map((b,i)=>{
-          const r=b.request;
-          return <div key={i} className="bg-gray-50 rounded-lg p-3 text-xs space-y-1">
-            <p className="font-semibold">{r?r.name:"알 수 없음"} {r?`(${r.phone})`:""}</p>
-            <p>{"\u{1F4C5}"} {b.startDate} ~ {b.endDate} | {b.startTime}~{b.endTime}</p>
-            {r&&r.childName&&<p>{"\u{1F476}"} {r.childName}</p>}
-            {r&&r.address&&<p>{"\u{1F4CD}"} {r.address} {r.addressDetail||""}</p>}
-          </div>;
-        })}</div>}
-      </div>}
-    </div>
-
-    {/* Add Booking Modal from Calendar */}
-    {addModal&&(()=>{
-      const hName=(helpers.find(x=>x.id===addModal.helperId)||{}).name||"";
-      const linkable=requests.filter(r=>r.status!=="cancelled");
-      const selR=linkable.find(r=>r.id===addForm.requestId);
-      const [calError,setCalError]=React.useState("");
-      const saveCalBooking=()=>{
-        if(!addForm.startDate||!addForm.endDate){setCalError("시작일과 종료일을 입력해주세요.");return;}
-        const db=getDB();
-        /* Check: helper must not already have bookings on these dates+times */
-        if(isHelperBusyInRange(addModal.helperId,addForm.startDate,addForm.endDate,db.bookings,addForm.startTime,addForm.endTime)){
-          setCalError(hName+" 도우미가 해당 기간/시간에 이미 다른 예약이 있습니다.");return;
-        }
-        /* Check: if linking to request, dates must not overlap with that request's existing bookings */
-        if(addForm.requestId){
-          const reqBks=(db.bookings||[]).filter(b=>b.requestId===addForm.requestId&&b.status==="active");
-          const overlap=reqBks.some(b=>b.startDate&&b.endDate&&addForm.startDate<=b.endDate&&b.startDate<=addForm.endDate);
-          if(overlap){setCalError("해당 신청에 이미 겹치는 기간의 예약이 있습니다.");return;}
-        }
-        db.bookings.push({id:genId(db),requestId:addForm.requestId||null,helperId:addModal.helperId,
-          startDate:addForm.startDate,endDate:addForm.endDate,
-          startTime:addForm.startTime,endTime:addForm.endTime,
-          status:"active",fee:Number(addForm.fee)||0,settlementStatus:"pending",
-          memo:addForm.requestId?"달력에서 매칭":"달력에서 직접 추가",createdAt:new Date().toISOString()});
-        if(addForm.requestId){
-          const ri=db.requests.findIndex(r=>r.id===addForm.requestId);
-          if(ri>=0&&db.requests[ri].status!=="matched")db.requests[ri].status="matching";
-        }
-        saveDB(db);reload();setAddModal(null);setSelCell(null);
-      };
-      return <div className="modal-overlay" onClick={()=>setAddModal(null)}><div className="modal-box" onClick={e=>e.stopPropagation()}>
-        <h3 className="font-bold text-lg mb-1">달력에서 예약 추가</h3>
-        <p className="text-sm text-gray-500 mb-4">{"\u{1F469}\u200D\u2695\uFE0F"} {hName} | {"\u{1F4C5}"} {addModal.date}</p>
-
-        <label className="block text-xs font-medium text-gray-600 mb-1">신청 이력 연결 (선택)</label>
-        <select value={addForm.requestId} onChange={e=>{const rId=e.target.value;setAddForm(p=>{const r=linkable.find(x=>x.id===rId);return {...p,requestId:rId,startDate:r&&r.startDate?r.startDate:p.startDate,endDate:r&&r.endDate?r.endDate:p.endDate,startTime:r&&r.startTime?r.startTime:p.startTime,endTime:r&&r.endTime?r.endTime:p.endTime};});}} className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm mb-3">
-          <option value="">연결 없이 직접 추가</option>
-          {linkable.map(r=><option key={r.id} value={r.id}>{r.name} ({r.phone}) - {r.childName||""} [{(ST[r.status]||{}).l||r.status}]</option>)}
-        </select>
-        {selR&&<div className="bg-indigo-50 rounded-lg p-3 mb-3 text-xs space-y-1">
-          <p className="font-semibold text-indigo-700">연결할 신청 정보</p>
-          <p>{selR.name} ({selR.phone}) | {selR.childName||"-"}</p>
-          {selR.startDate&&<p>{"\u{1F4C5}"} {selR.startDate} ~ {selR.endDate} | {selR.startTime}~{selR.endTime}</p>}
-          {selR.address&&<p>{"\u{1F4CD}"} {selR.address} {selR.addressDetail||""}</p>}
-        </div>}
-        <div className="grid grid-cols-2 gap-3">
-          <Inp label="시작일" type="date" value={addForm.startDate} onChange={e=>setAddForm(p=>({...p,startDate:e.target.value}))}/>
-          <Inp label="종료일" type="date" value={addForm.endDate} onChange={e=>setAddForm(p=>({...p,endDate:e.target.value}))}/>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Inp label="시작시간" type="time" value={addForm.startTime} onChange={e=>setAddForm(p=>({...p,startTime:e.target.value}))}/>
-          <Inp label="종료시간" type="time" value={addForm.endTime} onChange={e=>setAddForm(p=>({...p,endTime:e.target.value}))}/>
-        </div>
-        <Inp label="금액 (원)" type="number" placeholder="비워두면 자동 계산" value={addForm.fee} onChange={e=>setAddForm(p=>({...p,fee:e.target.value}))}/>
-        {calError&&<p className="text-xs text-red-600 font-semibold bg-red-50 rounded-lg p-2">{calError}</p>}
-        <div className="flex gap-2 mt-4">
-          <Btn onClick={saveCalBooking}>{addForm.requestId?"신청 연결 + 예약":"예약 등록"}</Btn>
-          <Btn v="secondary" onClick={()=>setAddModal(null)}>취소</Btn>
-        </div>
-      </div></div>;
-    })()}
   </div>;
 }
 
-/* ═══════════
-   Sidebar
-   ═══════════ */
-function Sidebar({page,setPage,stats,collapsed,setCollapsed}){
-  const items=[
-    {k:"dash",l:"대시보드",ic:"\u{1F4CA}"},
-    {k:"reqs",l:"신청 관리",ic:"\u{1F4CB}",badge:stats.newCount},
-    {k:"calls",l:"전화 상담",ic:"\u{1F4DE}",badge:stats.pendingCalls},
-    {k:"helpers",l:"도우미 관리",ic:"\u{1F469}\u200D\u2695\uFE0F"},
-    {k:"schedule",l:"도우미 일정",ic:"\u{1F4C5}"},
-    {k:"settle",l:"예약 / 정산",ic:"\u{1F4B0}",badge:stats.totalBookings},
-  ];
-  return <div className={`bg-white border-r border-gray-200 flex flex-col transition-all ${collapsed?"w-16":"w-56"}`} style={{minHeight:"100vh"}}>
-    <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-      {!collapsed&&<h1 className="text-lg font-bold text-indigo-600">맘케어 Admin</h1>}
-      <button onClick={()=>setCollapsed(!collapsed)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400">{collapsed?"\u{25B6}":"\u{25C0}"}</button>
-    </div>
-    <nav className="flex-1 p-2 space-y-1">{items.map(it=><button key={it.k} onClick={()=>setPage(it.k)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition ${page===it.k?"bg-indigo-50 text-indigo-700 font-semibold":"text-gray-600 hover:bg-gray-50"}`}>
-      <span className="text-lg">{it.ic}</span>
-      {!collapsed&&<span className="flex-1 text-left">{it.l}</span>}
-      {!collapsed&&it.badge>0&&<span className={`text-white text-xs rounded-full px-1.5 py-0.5 min-w-5 text-center ${it.k==="calls"?"bg-orange-500 pulse-dot":"bg-red-500 pulse-dot"}`}>{it.badge}</span>}
-    </button>)}</nav>
-  </div>;
-}
-
-/* ═══════
-   App
-   ═══════ */
+/* ═══════════════
+   App Shell
+   ═══════════════ */
 function App(){
-  const [page,setPage]=useState("dash");
-  const [collapsed,setCollapsed]=useState(false);
   const {requests,helpers,bookings,callRequests,stats,reload}=usePolling(2000);
-
-  return <div className="flex min-h-screen">
-    <Sidebar page={page} setPage={setPage} stats={stats} collapsed={collapsed} setCollapsed={setCollapsed}/>
-    <div className="flex-1 p-6 overflow-y-auto">
-      {page==="dash"&&<Dashboard stats={stats} requests={requests} callRequests={callRequests}/>}
-      {page==="reqs"&&<Requests requests={requests} helpers={helpers} bookings={bookings} reload={reload}/>}
-      {page==="calls"&&<CallManage callRequests={callRequests} reload={reload}/>}
-      {page==="helpers"&&<Helpers helpers={helpers} reload={reload}/>}
-      {page==="schedule"&&<HelperSchedule helpers={helpers} bookings={bookings} requests={requests} reload={reload}/>}
-      {page==="settle"&&<Settlement bookings={bookings} helpers={helpers} requests={requests} reload={reload}/>}
+  const [tab,setTab]=useState("dash");
+  const tabs=[{id:"dash",l:"대시보드",icon:"\u{1F4CA}"},{id:"req",l:"신청 관리",icon:"\u{1F4CB}"},{id:"call",l:"전화 상담",icon:"\u{1F4DE}"},{id:"helper",l:"도우미",icon:"\u{1F469}"},{id:"settle",l:"예약/정산",icon:"\u{1F4B0}"},{id:"schedule",l:"일정",icon:"\u{1F4C5}"}];
+  return <div className="min-h-screen bg-gray-100">
+    <div className="sticky top-0 z-30 bg-white border-b border-gray-200 px-4 py-2 flex items-center gap-4 overflow-x-auto">
+      <h1 className="font-bold text-indigo-600 whitespace-nowrap">맘케어 Admin</h1>
+      {tabs.map(t=><button key={t.id} onClick={()=>setTab(t.id)} className={`flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition ${tab===t.id?"bg-indigo-50 text-indigo-700":"text-gray-500 hover:bg-gray-50"}`}>{t.icon} {t.l}</button>)}
+    </div>
+    <div className="max-w-7xl mx-auto px-4 py-5">
+      {tab==="dash"&&<Dashboard stats={stats} requests={requests} callRequests={callRequests}/>}
+      {tab==="req"&&<Requests requests={requests} helpers={helpers} bookings={bookings} reload={reload}/>}
+      {tab==="call"&&<CallManage callRequests={callRequests} reload={reload}/>}
+      {tab==="helper"&&<Helpers helpers={helpers} reload={reload}/>}
+      {tab==="settle"&&<Settlement bookings={bookings} helpers={helpers} requests={requests} reload={reload}/>}
+      {tab==="schedule"&&<HelperSchedule helpers={helpers} bookings={bookings} requests={requests} reload={reload}/>}
     </div>
   </div>;
 }

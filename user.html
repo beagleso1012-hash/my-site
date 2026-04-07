@@ -20,38 +20,39 @@ input,select,textarea{font-size:16px!important}
 <script type="text/babel">
 const {useState,useEffect,useCallback} = React;
 
-/* ─── LocalStorage DB ─── */
-const DB_KEY = "momcare_db";
-function getDB(){
-  try{const d=localStorage.getItem(DB_KEY);if(d) return JSON.parse(d);}catch(e){}
-  const init={requests:[],children:[],helpers:[
-    {id:"h1",name:"김순이",gender:"여",phone:"010-1111-2222",bank:"국민은행",account:"123-456-789",career:"산후도우미 경력 5년, 신생아 전문",note:"야간 돌봄 가능",availableTime:"09:00~18:00",area:"서울 강남/서초",rating:4.8},
-    {id:"h2",name:"이영희",gender:"여",phone:"010-3333-4444",bank:"신한은행",account:"987-654-321",career:"산후조리원 근무 3년",note:"쌍둥이 케어 경험 있음",availableTime:"08:00~17:00",area:"서울 송파/강동",rating:4.5},
-    {id:"h3",name:"박미경",gender:"여",phone:"010-5555-6666",bank:"우리은행",account:"456-789-123",career:"간호조무사 출신, 산후도우미 7년",note:"모유수유 상담 가능",availableTime:"10:00~19:00",area:"서울 마포/용산",rating:4.9},
-  ],bookings:[],_nextId:100};
-  localStorage.setItem(DB_KEY,JSON.stringify(init));
-  return init;
-}
+/* ═══════════════════════════
+   LocalStorage DB (shared)
+   ═══════════════════════════ */
+const DB_KEY="momcare_db";
+function getDB(){try{const d=localStorage.getItem(DB_KEY);if(d){const p=JSON.parse(d);if(!p.callRequests)p.callRequests=[];if(!p.bookings)p.bookings=[];return p;}}catch(e){}return {requests:[],helpers:[],bookings:[],callRequests:[],_nextId:100};}
 function saveDB(db){localStorage.setItem(DB_KEY,JSON.stringify(db));}
 function genId(db){const id="id_"+(db._nextId++);return id;}
 
-/* ─── Validation Utilities ─── */
+/* ═══════════════
+   Validation
+   ═══════════════ */
 const TODAY=new Date().toISOString().slice(0,10);
 function fmtPhone(v){const n=v.replace(/[^0-9]/g,"").slice(0,11);if(n.length<=3)return n;if(n.length<=7)return n.slice(0,3)+"-"+n.slice(3);return n.slice(0,3)+"-"+n.slice(3,7)+"-"+n.slice(7);}
 function filterName(v){return v.replace(/[^가-힣a-zA-Zㄱ-ㅎㅏ-ㅣ\s]/g,"");}
 function isValidPhone(v){return v.replace(/[^0-9]/g,"").length>=10;}
 
-/* ─── Status ─── */
+/* ═══════════════
+   Status
+   ═══════════════ */
 const ST={applied:{l:"신청",c:"bg-blue-100 text-blue-700"},consulting:{l:"상담중",c:"bg-indigo-100 text-indigo-700"},matched:{l:"매칭완료",c:"bg-green-100 text-green-700"},in_progress:{l:"진행중",c:"bg-yellow-100 text-yellow-800"},suspended:{l:"중단",c:"bg-orange-100 text-orange-700"},done_pre:{l:"완료(정산전)",c:"bg-teal-100 text-teal-700"},done_post:{l:"완료(정산후)",c:"bg-emerald-100 text-emerald-800"},cancelled:{l:"취소",c:"bg-gray-100 text-gray-500"}};
 function Badge({status}){const s=ST[status]||ST.applied;return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${s.c}`}>{s.l}</span>;}
 
-/* ─── UI ─── */
+/* ═══════════════
+   UI Atoms
+   ═══════════════ */
 function Inp({label,required,hint,...p}){return <div className="mb-3">{label&&<label className="block text-sm font-medium text-gray-700 mb-1">{label}{required&&<span className="text-red-500 ml-0.5">*</span>}</label>}<input{...p}className={`w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-pink-400 transition ${p.disabled?"bg-gray-50 text-gray-400":""}`}/>{hint&&<p className="text-xs text-gray-400 mt-1">{hint}</p>}</div>;}
 function TA({label,...p}){return <div className="mb-3">{label&&<label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>}<textarea{...p}rows={3}className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-pink-400 resize-none transition"/></div>;}
 function Sel({label,required,options,...p}){return <div className="mb-3">{label&&<label className="block text-sm font-medium text-gray-700 mb-1">{label}{required&&<span className="text-red-500 ml-0.5">*</span>}</label>}<select{...p}className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-pink-400 transition"><option value="">선택해주세요</option>{options.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></div>;}
 function Btn({children,v="primary",cls="",...p}){const vs={primary:"bg-pink-500 text-white hover:bg-pink-600 shadow-lg",secondary:"bg-gray-100 text-gray-700 hover:bg-gray-200"};return <button className={`inline-flex items-center justify-center px-5 py-3 rounded-xl font-semibold text-sm transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed gap-2 ${vs[v]} ${cls}`}{...p}>{children}</button>;}
 
-/* ─── Landing ─── */
+/* ═══════════════
+   Landing
+   ═══════════════ */
 function Landing({go}){
   return <div className="fade-in" style={{minHeight:"100vh",background:"linear-gradient(180deg,#fff1f2 0%,#fff 40%,#fdf2f8 100%)"}}>
     <div className="px-6 pt-14 pb-6 text-center">
@@ -63,61 +64,36 @@ function Landing({go}){
       <p className="text-gray-400 text-sm mt-1">회원가입 없이 간편하게 신청하세요</p>
     </div>
     <div className="px-5 space-y-3 max-w-md mx-auto">
-      {[
-        {k:"apply",bg:"linear-gradient(135deg,#f43f5e,#ec4899)",ic:"\u{1F4DD}",t:"돌봄 신청하기",d:"간단한 정보만 입력하면 끝!",w:true},
-        {k:"inquiry",bg:"#fff",ic:"\u{1F50D}",t:"신청 내역 조회",d:"연락처로 간편 조회"},
-        {k:"call",bg:"#fff",ic:"\u{1F4DE}",t:"전화 상담 요청",d:"10분 이내 연락드려요"},
-      ].map(m=><button key={m.k} onClick={()=>go(m.k)} className={`w-full rounded-2xl p-5 text-left shadow-sm hover:shadow-md transition ${m.w?"text-white":"text-gray-900 border border-gray-200"}`} style={{background:m.bg}}>
-        <div className="flex items-center gap-4">
-          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl ${m.w?"bg-white bg-opacity-20":"bg-gray-50"}`}>{m.ic}</div>
-          <div className="flex-1"><p className="text-base font-bold">{m.t}</p><p className={`text-sm mt-0.5 ${m.w?"opacity-80":"text-gray-500"}`}>{m.d}</p></div>
-          <span className={m.w?"opacity-60":"text-gray-300"}>{"\u203A"}</span>
-        </div>
+      {[{k:"apply",bg:"linear-gradient(135deg,#f43f5e,#ec4899)",ic:"\u{1F4DD}",t:"돌봄 신청하기",d:"간단한 정보만 입력하면 끝!",w:true},{k:"inquiry",bg:"#fff",ic:"\u{1F50D}",t:"신청 내역 조회",d:"연락처로 간편 조회"},{k:"call",bg:"#fff",ic:"\u{1F4DE}",t:"전화 상담 요청",d:"10분 이내 연락드려요"}].map(m=><button key={m.k} onClick={()=>go(m.k)} className={`w-full rounded-2xl p-5 text-left shadow-sm hover:shadow-md transition active:scale-98 ${m.w?"text-white":"text-gray-900 border border-gray-200"}`} style={{background:m.bg}}>
+        <div className="flex items-center gap-4"><div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl ${m.w?"bg-white bg-opacity-20":"bg-gray-50"}`}>{m.ic}</div><div className="flex-1"><p className="text-base font-bold">{m.t}</p><p className={`text-sm mt-0.5 ${m.w?"opacity-80":"text-gray-500"}`}>{m.d}</p></div><span className={m.w?"opacity-60":"text-gray-300"}>{"\u203A"}</span></div>
       </button>)}
     </div>
     <div className="px-5 mt-8 max-w-md mx-auto">
-      <div className="grid grid-cols-3 gap-3 text-center">
-        {[{n:"500+",l:"매칭 완료"},{n:"98%",l:"만족도"},{n:"50+",l:"전문 도우미"}].map((b,i)=><div key={i} className="bg-white border border-gray-100 rounded-2xl py-4 shadow-sm"><p className="text-xl font-extrabold text-pink-500">{b.n}</p><p className="text-xs text-gray-500 mt-1">{b.l}</p></div>)}
-      </div>
-      <div className="bg-yellow-50 border border-yellow-100 rounded-2xl p-4 mt-4 flex items-start gap-3">
-        <span className="text-yellow-500 mt-0.5">{"\u{1F6E1}"}</span>
-        <div><p className="font-semibold text-yellow-900 text-sm">안전 보장</p><p className="text-xs text-yellow-700 mt-1 leading-relaxed">모든 도우미는 신원 확인, 건강 검진, 전문 교육을 이수한 전문가입니다.</p></div>
-      </div>
+      <div className="grid grid-cols-3 gap-3 text-center">{[{n:"500+",l:"매칭 완료"},{n:"98%",l:"만족도"},{n:"50+",l:"전문 도우미"}].map((b,i)=><div key={i} className="bg-white border border-gray-100 rounded-2xl py-4 shadow-sm"><p className="text-xl font-extrabold text-pink-500">{b.n}</p><p className="text-xs text-gray-500 mt-1">{b.l}</p></div>)}</div>
       <p className="text-center text-xs text-gray-400 py-8">고객센터 1588-0000 (평일 09:00~18:00)</p>
     </div>
   </div>;
 }
 
-/* ─── Apply Form ─── */
+/* ═══════════════
+   Apply Form
+   ═══════════════ */
 function ApplyForm({onDone,onBack}){
-  const [step,setStep]=useState(0);
-  const [quick,setQuick]=useState(false);
-  const [f,sf]=useState({name:"",phone:"",gender:"여",birth:"",address:"",addressDetail:"",entranceCode:"",doorCode:"",doorCodeOption:"input",childName:"",childGender:"여",childBirth:"",childNote:"",parentRequest:"",startDate:"",endDate:"",startTime:"09:00",endTime:"18:00",repeatType:"daily"});
+  const [step,setStep]=useState(0);const [quick,setQuick]=useState(false);
+  const [f,sf]=useState({name:"",phone:"",gender:"여",birth:"",address:"",addressDetail:"",entranceCode:"",doorCode:"",doorCodeOption:"input",childName:"",childGender:"여",childBirth:"",childNote:"",parentRequest:"",startDate:"",endDate:"",startTime:"09:00",endTime:"18:00"});
   const up=(k,v)=>sf(p=>({...p,[k]:v}));
-  const tot=quick?2:4;
-  const isChild=(quick&&step===1)||(!quick&&step===2);
-  const isSched=!quick&&step===3;
-  const isLast=(quick&&step===1)||(!quick&&step===3);
+  const tot=quick?2:4;const isChild=(quick&&step===1)||(!quick&&step===2);const isSched=!quick&&step===3;const isLast=(quick&&step===1)||(!quick&&step===3);
 
   const submit=()=>{
-    if(!f.name||!f.phone){alert("이름과 연락처를 입력해주세요.");return;}
-    if(!isValidPhone(f.phone)){alert("연락처를 정확히 입력해주세요. (예: 010-1234-5678)");return;}
+    if(!f.name||!isValidPhone(f.phone)){alert("이름과 연락처를 정확히 입력해주세요.");return;}
     if(!f.childName){alert("아이 이름을 입력해주세요.");return;}
     if(!quick&&f.startDate&&f.endDate&&f.startDate>f.endDate){alert("종료일이 시작일보다 빠릅니다.");return;}
-    if(!quick&&f.startTime&&f.endTime&&f.startTime>=f.endTime){alert("종료시간이 시작시간보다 빠르거나 같습니다.");return;}
-    const db=getDB();
-    const id=genId(db);
-    const req={...f,quickMode:quick,
+    const db=getDB();const id=genId(db);
+    const req={...f,id,status:"applied",helperId:null,createdAt:new Date().toISOString(),
       entranceCode:f.doorCodeOption==="input"?f.entranceCode:`[${f.doorCodeOption==="later"?"매칭 후 공유":"현장 전달"}]`,
-      doorCode:f.doorCodeOption==="input"?f.doorCode:`[${f.doorCodeOption==="later"?"매칭 후 공유":"현장 전달"}]`,
-      id,status:"applied",helperId:null,createdAt:new Date().toISOString()
-    };
-    db.requests.push(req);
-    if(f.childName){db.children.push({id:genId(db),requestId:id,name:f.childName,gender:f.childGender,birth:f.childBirth,note:f.childNote,parentRequest:f.parentRequest});}
-    saveDB(db);
-    onDone(req);
+      doorCode:f.doorCodeOption==="input"?f.doorCode:`[${f.doorCodeOption==="later"?"매칭 후 공유":"현장 전달"}]`};
+    db.requests.push(req);saveDB(db);onDone(req);
   };
-
   const goNext=()=>{if(quick&&step===0)setStep(1);else setStep(step+1);};
   const goPrev=()=>{if(quick&&step===1)setStep(0);else setStep(step-1);};
 
@@ -125,7 +101,6 @@ function ApplyForm({onDone,onBack}){
     <div className="sticky top-0 z-30 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3"><button onClick={onBack} className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-gray-100">{"\u2039"}</button><h2 className="font-bold text-gray-900">돌봄 신청</h2></div>
     <div className="max-w-md mx-auto px-5 py-5 space-y-5">
       <div className="flex gap-1">{Array.from({length:tot}).map((_,i)=><div key={i} className={`flex-1 h-1.5 rounded-full transition-all ${i<=step?"bg-pink-400":"bg-gray-200"}`}/>)}</div>
-
       {step===0&&<div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
         <h3 className="text-lg font-bold text-gray-900 mb-4">신청자 정보</h3>
         <Inp label="이름" required placeholder="홍길동" value={f.name} onChange={e=>up("name",filterName(e.target.value))} maxLength={20} autoComplete="name"/>
@@ -134,16 +109,14 @@ function ApplyForm({onDone,onBack}){
         <Inp label="생년월일" type="date" value={f.birth} onChange={e=>up("birth",e.target.value)} max={TODAY}/>
         <div className="border-t border-gray-100 pt-4 mt-4"><label className="flex items-center gap-3 cursor-pointer"><div onClick={()=>setQuick(q=>!q)} className={`w-10 h-6 rounded-full relative transition cursor-pointer ${quick?"bg-pink-400":"bg-gray-200"}`}><div className={`w-5 h-5 bg-white rounded-full shadow absolute top-0.5 transition-all ${quick?"left-4":"left-0.5"}`}/></div><div><p className="text-sm font-medium text-gray-700">빠른 신청 모드</p><p className="text-xs text-gray-400">최소 정보만 입력</p></div></label></div>
       </div>}
-
       {step===1&&!quick&&<div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm space-y-3">
         <h3 className="text-lg font-bold text-gray-900 mb-2">주소 정보</h3>
         <Inp label="주소" required placeholder="서울시 강남구 ..." value={f.address} onChange={e=>up("address",e.target.value)}/>
         <Inp label="상세주소" placeholder="동/호수" value={f.addressDetail} onChange={e=>up("addressDetail",e.target.value)}/>
         <label className="block text-sm font-medium text-gray-700 mb-1">출입 정보 제공 방식</label>
         <div className="space-y-2">{[{v:"input",l:"지금 입력",d:"암호화 저장"},{v:"later",l:"매칭 후 공유",d:"도우미 배정 후"},{v:"onsite",l:"현장 전달",d:"직접 안내"}].map(o=><button key={o.v} onClick={()=>up("doorCodeOption",o.v)} className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 text-left transition ${f.doorCodeOption===o.v?"border-pink-400 bg-pink-50":"border-gray-100"}`}><div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${f.doorCodeOption===o.v?"border-pink-400":"border-gray-300"}`}>{f.doorCodeOption===o.v&&<div className="w-2.5 h-2.5 bg-pink-400 rounded-full"/>}</div><div><p className="text-sm font-medium">{o.l}</p><p className="text-xs text-gray-500">{o.d}</p></div></button>)}</div>
-        {f.doorCodeOption==="input"&&<div className="bg-gray-50 rounded-xl p-4 space-y-2 mt-2"><div className="flex items-center gap-2 text-xs text-yellow-700 bg-yellow-50 rounded-lg px-3 py-2">{"\u{1F6E1}"} AES-256 암호화 저장</div><Inp label="공동현관" placeholder="선택" value={f.entranceCode} onChange={e=>up("entranceCode",e.target.value)}/><Inp label="집 비밀번호" placeholder="선택" value={f.doorCode} onChange={e=>up("doorCode",e.target.value)}/></div>}
+        {f.doorCodeOption==="input"&&<div className="bg-gray-50 rounded-xl p-4 space-y-2 mt-2"><Inp label="공동현관" placeholder="선택" value={f.entranceCode} onChange={e=>up("entranceCode",e.target.value)}/><Inp label="집 비밀번호" placeholder="선택" value={f.doorCode} onChange={e=>up("doorCode",e.target.value)}/></div>}
       </div>}
-
       {isChild&&<div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
         <h3 className="text-lg font-bold text-gray-900 mb-4">아이 정보</h3>
         <Inp label="아이 이름" required placeholder="이름" value={f.childName} onChange={e=>up("childName",filterName(e.target.value))} maxLength={20}/>
@@ -151,24 +124,19 @@ function ApplyForm({onDone,onBack}){
         <Inp label="생년월일" type="date" required value={f.childBirth} onChange={e=>up("childBirth",e.target.value)} max={TODAY}/>
         {!quick&&<><TA label="특이사항" placeholder="알러지, 수면 패턴 등" value={f.childNote} onChange={e=>up("childNote",e.target.value)}/><TA label="부모 요구사항" placeholder="특별 요청" value={f.parentRequest} onChange={e=>up("parentRequest",e.target.value)}/></>}
       </div>}
-
       {isSched&&<div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
         <h3 className="text-lg font-bold text-gray-900 mb-4">돌봄 일정</h3>
         <div className="grid grid-cols-2 gap-3"><Inp label="시작일" type="date" required value={f.startDate} onChange={e=>{up("startDate",e.target.value);if(f.endDate&&e.target.value>f.endDate)up("endDate",e.target.value);}} min={TODAY}/><Inp label="종료일" type="date" required value={f.endDate} onChange={e=>up("endDate",e.target.value)} min={f.startDate||TODAY}/></div>
         <div className="grid grid-cols-2 gap-3"><Inp label="시작시간" type="time" value={f.startTime} onChange={e=>up("startTime",e.target.value)}/><Inp label="종료시간" type="time" value={f.endTime} onChange={e=>up("endTime",e.target.value)}/></div>
-        <Sel label="반복" value={f.repeatType} onChange={e=>up("repeatType",e.target.value)} options={[{value:"daily",label:"매일"},{value:"weekday",label:"주중"},{value:"custom",label:"특정 요일"}]}/>
       </div>}
-
-      <div className="flex gap-3">
-        {step>0&&<Btn v="secondary" onClick={goPrev}>이전</Btn>}
-        <div className="flex-1"/>
-        {isLast?<Btn onClick={submit} disabled={!f.name||!isValidPhone(f.phone)||!f.childName}>{"\u{1F4E8}"} 신청하기</Btn>:<Btn onClick={goNext} disabled={step===0&&(!f.name||!isValidPhone(f.phone))}>다음</Btn>}
-      </div>
+      <div className="flex gap-3">{step>0&&<Btn v="secondary" onClick={goPrev}>이전</Btn>}<div className="flex-1"/>{isLast?<Btn onClick={submit} disabled={!f.name||!isValidPhone(f.phone)||!f.childName}>{"\u{1F4E8}"} 신청하기</Btn>:<Btn onClick={goNext} disabled={step===0&&(!f.name||!isValidPhone(f.phone))}>다음</Btn>}</div>
     </div>
   </div>;
 }
 
-/* ─── Complete ─── */
+/* ═══════════════
+   Complete
+   ═══════════════ */
 function Complete({req,onHome}){
   return <div className="min-h-screen flex items-center justify-center px-6 fade-in" style={{background:"linear-gradient(180deg,#ecfdf5,#fff,#f0fdf4)"}}>
     <div className="text-center max-w-sm w-full">
@@ -184,21 +152,15 @@ function Complete({req,onHome}){
   </div>;
 }
 
-/* ─── Inquiry ─── */
+/* ═══════════════
+   Inquiry
+   ═══════════════ */
 function Inquiry({onBack}){
   const [ph,setPh]=useState("");const [searched,setSearched]=useState(false);
   const [reqs,setReqs]=useState([]);const [helpers,setHelpers]=useState([]);
-
-  const loadData=useCallback(()=>{
-    const db=getDB();
-    setReqs(ph.trim()?db.requests.filter(r=>r.phone===ph.trim()):[]);
-    setHelpers(db.helpers);
-  },[ph]);
-
-  const doSearch=()=>{if(!ph.trim()){alert("연락처를 입력해주세요.");return;}loadData();setSearched(true);};
-
+  const loadData=useCallback(()=>{const db=getDB();const p=ph.replace(/[^0-9-]/g,"");setReqs((db.requests||[]).filter(r=>r.phone===p));setHelpers(db.helpers||[]);},[ph]);
+  const doSearch=()=>{if(!isValidPhone(ph)){alert("연락처를 정확히 입력해주세요.");return;}loadData();setSearched(true);};
   useEffect(()=>{if(searched){const iv=setInterval(loadData,3000);return ()=>clearInterval(iv);}},[searched,loadData]);
-
   return <div className="min-h-screen bg-gray-50 fade-in">
     <div className="sticky top-0 z-30 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3"><button onClick={onBack} className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-gray-100">{"\u2039"}</button><h2 className="font-bold text-gray-900">신청 내역 조회</h2></div>
     <div className="max-w-md mx-auto px-5 py-5 space-y-5">
@@ -222,16 +184,12 @@ function Inquiry({onBack}){
   </div>;
 }
 
-/* ─── Call ─── */
+/* ═══════════════
+   Call Request
+   ═══════════════ */
 function CallReq({onBack}){
   const [ph,setPh]=useState("");const [nm,setNm]=useState("");const [msg,setMsg]=useState("");const [done,setDone]=useState(false);
-  const doSubmit=()=>{
-    const db=getDB();
-    if(!db.callRequests) db.callRequests=[];
-    db.callRequests.push({id:genId(db),name:nm,phone:ph,message:msg,status:"pending",memo:"",createdAt:new Date().toISOString()});
-    saveDB(db);
-    setDone(true);
-  };
+  const doSubmit=()=>{const db=getDB();if(!db.callRequests)db.callRequests=[];db.callRequests.push({id:genId(db),name:nm,phone:ph,message:msg,status:"pending",memo:"",createdAt:new Date().toISOString()});saveDB(db);setDone(true);};
   if(done)return <div className="min-h-screen flex items-center justify-center px-6 fade-in" style={{background:"linear-gradient(180deg,#ecfdf5,#fff)"}}>
     <div className="text-center max-w-sm space-y-5"><div className="w-20 h-20 bg-green-100 rounded-full mx-auto flex items-center justify-center text-3xl">{"\u{1F4DE}"}</div><h2 className="text-xl font-bold">상담 요청 완료</h2><p className="text-gray-500 text-sm">10분 이내 <b>{ph}</b>로 연락</p><Btn onClick={onBack} cls="w-full">홈으로</Btn></div>
   </div>;
@@ -241,7 +199,9 @@ function CallReq({onBack}){
   </div>;
 }
 
-/* ─── App ─── */
+/* ═══════════════
+   App
+   ═══════════════ */
 function App(){
   const [sc,setSc]=useState("home");const [lastReq,setLastReq]=useState(null);
   switch(sc){
