@@ -8,6 +8,22 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
 <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet"/>
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyDMqW9ePOe_wxg4n3yn0L8MOK2dmx0mZJo",
+  authDomain: "beagleso1012-hash-25446.firebaseapp.com",
+  projectId: "beagleso1012-hash-25446",
+  storageBucket: "beagleso1012-hash-25446.firebasestorage.app",
+  messagingSenderId: "265514031614",
+  appId: "1:265514031614:web:7c493c30fb256f3f5a48af",
+  measurementId: "G-3BXXTBGBC0"
+};
+firebase.initializeApp(firebaseConfig);
+const firestore = firebase.firestore();
+</script>
 <style>
 *{-webkit-tap-highlight-color:transparent;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;margin:0;background:#f9fafb}
@@ -20,13 +36,42 @@ input,select,textarea{font-size:16px!important}
 <script type="text/babel">
 const {useState,useEffect,useCallback} = React;
 
-/* ═══════════════════════════
-   LocalStorage DB (shared)
-   ═══════════════════════════ */
+/* ═══════════════════════════════════════════
+   Firestore DB + LocalStorage 캐시 (동기화)
+   ═══════════════════════════════════════════ */
 const DB_KEY="momcare_db";
-function getDB(){try{const d=localStorage.getItem(DB_KEY);if(d){const p=JSON.parse(d);if(!p.callRequests)p.callRequests=[];if(!p.bookings)p.bookings=[];return p;}}catch(e){}return {requests:[],helpers:[],bookings:[],callRequests:[],_nextId:100};}
-function saveDB(db){localStorage.setItem(DB_KEY,JSON.stringify(db));}
+const COLLECTIONS=["requests","helpers","bookings","callRequests"];
+function getDB(){
+  try{const d=localStorage.getItem(DB_KEY);if(d){const p=JSON.parse(d);COLLECTIONS.forEach(c=>{if(!p[c])p[c]=[];});if(!p._nextId)p._nextId=100;return p;}}catch(e){}
+  return {requests:[],helpers:[],bookings:[],callRequests:[],_nextId:100};
+}
+function saveDB(db){
+  localStorage.setItem(DB_KEY,JSON.stringify(db));
+  /* Firestore에 비동기 저장 */
+  COLLECTIONS.forEach(col=>{
+    (db[col]||[]).forEach(item=>{
+      if(!item.id)return;
+      firestore.collection(col).doc(item.id).set(item,{merge:true}).catch(e=>console.warn("Firestore write:",e));
+    });
+  });
+  firestore.collection("_meta").doc("counter").set({_nextId:db._nextId||100}).catch(()=>{});
+}
 function genId(db){const id="id_"+(db._nextId++);return id;}
+
+/* Firestore에서 전체 불러오기 (앱 시작시) */
+async function loadFromFirestore(){
+  try{
+    const db=getDB();let changed=false;
+    for(const col of COLLECTIONS){
+      const snap=await firestore.collection(col).get();
+      if(!snap.empty){const items=[];snap.forEach(doc=>items.push(doc.data()));if(items.length>0){db[col]=items;changed=true;}}
+    }
+    const metaSnap=await firestore.collection("_meta").doc("counter").get();
+    if(metaSnap.exists){const m=metaSnap.data();if(m._nextId)db._nextId=Math.max(db._nextId||100,m._nextId);}
+    if(changed)localStorage.setItem(DB_KEY,JSON.stringify(db));
+    console.log("✅ Firestore 동기화 완료!");return db;
+  }catch(e){console.warn("Firestore load 실패:",e);return getDB();}
+}
 
 /* ═══════════════
    Validation
@@ -158,7 +203,7 @@ function Inquiry({onBack}){
   const [ph,setPh]=useState("");const [searched,setSearched]=useState(false);
   const [reqs,setReqs]=useState([]);const [helpers,setHelpers]=useState([]);
   const loadData=useCallback(()=>{const db=getDB();const p=ph.replace(/[^0-9-]/g,"");setReqs((db.requests||[]).filter(r=>r.phone===p));setHelpers(db.helpers||[]);},[ph]);
-  const doSearch=()=>{if(!isValidPhone(ph)){alert("연락처를 정확히 입력해주세요.");return;}loadData();setSearched(true);};
+  const doSearch=()=>{if(!isValidPhone(ph)){alert("연락처를 정확히 입력해주세요.");return;}loadFromFirestore().then(()=>{loadData();setSearched(true);});};
   useEffect(()=>{if(searched){const iv=setInterval(loadData,3000);return ()=>clearInterval(iv);}},[searched,loadData]);
   return <div className="min-h-screen bg-gray-50 fade-in">
     <div className="sticky top-0 z-30 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3"><button onClick={onBack} className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-gray-100">{"\u2039"}</button><h2 className="font-bold text-gray-900">신청 내역 조회</h2></div>
@@ -202,7 +247,9 @@ function CallReq({onBack}){
    App
    ═══════════════ */
 function App(){
-  const [sc,setSc]=useState("home");const [lastReq,setLastReq]=useState(null);
+  const [sc,setSc]=useState("home");const [lastReq,setLastReq]=useState(null);const [ready,setReady]=useState(false);
+  useEffect(()=>{loadFromFirestore().then(()=>setReady(true));},[]);
+  if(!ready)return <div className="min-h-screen flex items-center justify-center"><p className="text-gray-400 text-sm">데이터 로딩중...</p></div>;
   switch(sc){
     case"apply":return <ApplyForm onDone={r=>{setLastReq(r);setSc("complete");}} onBack={()=>setSc("home")}/>;
     case"complete":return <Complete req={lastReq} onHome={()=>setSc("home")}/>;

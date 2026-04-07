@@ -9,6 +9,22 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
 <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyDMqW9ePOe_wxg4n3yn0L8MOK2dmx0mZJo",
+  authDomain: "beagleso1012-hash-25446.firebaseapp.com",
+  projectId: "beagleso1012-hash-25446",
+  storageBucket: "beagleso1012-hash-25446.firebasestorage.app",
+  messagingSenderId: "265514031614",
+  appId: "1:265514031614:web:7c493c30fb256f3f5a48af",
+  measurementId: "G-3BXXTBGBC0"
+};
+firebase.initializeApp(firebaseConfig);
+const firestore = firebase.firestore();
+</script>
 <style>
 *{-webkit-tap-highlight-color:transparent;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',sans-serif;margin:0;background:#f3f4f6}
@@ -25,22 +41,69 @@ input,select,textarea{font-size:14px!important}
 <script type="text/babel">
 const {useState,useEffect,useCallback} = React;
 
-/* ═══════════════════════════════════════
-   LocalStorage DB (same key as user.html)
-   ═══════════════════════════════════════ */
+/* ═══════════════════════════════════════════
+   Firestore DB + LocalStorage 캐시 (동기화)
+   ═══════════════════════════════════════════ */
 const DB_KEY = "momcare_db";
+const COLLECTIONS = ["requests","helpers","bookings","callRequests"];
+const DEFAULT_HELPERS = [
+  {id:"h1",name:"김순이",gender:"여",phone:"010-1111-2222",bank:"국민은행",account:"123-456-789",career:"산후도우미 경력 5년, 신생아 전문",note:"야간 돌봄 가능",availableTime:"09:00~18:00",area:"서울 강남/서초",rating:4.8},
+  {id:"h2",name:"이영희",gender:"여",phone:"010-3333-4444",bank:"신한은행",account:"987-654-321",career:"산후조리원 근무 3년",note:"쌍둥이 케어 경험 있음",availableTime:"08:00~17:00",area:"서울 송파/강동",rating:4.5},
+  {id:"h3",name:"박미경",gender:"여",phone:"010-5555-6666",bank:"우리은행",account:"456-789-123",career:"간호조무사 출신, 산후도우미 7년",note:"모유수유 상담 가능",availableTime:"10:00~19:00",area:"서울 마포/용산",rating:4.9},
+];
+
+/* 로컬 캐시 (빠른 읽기용) */
 function getDB(){
-  try{const d=localStorage.getItem(DB_KEY);if(d){const parsed=JSON.parse(d);if(!parsed.callRequests)parsed.callRequests=[];if(!parsed.bookings)parsed.bookings=[];return parsed;}}catch(e){}
-  const init={requests:[],children:[],helpers:[
-    {id:"h1",name:"김순이",gender:"여",phone:"010-1111-2222",bank:"국민은행",account:"123-456-789",career:"산후도우미 경력 5년, 신생아 전문",note:"야간 돌봄 가능",availableTime:"09:00~18:00",area:"서울 강남/서초",rating:4.8},
-    {id:"h2",name:"이영희",gender:"여",phone:"010-3333-4444",bank:"신한은행",account:"987-654-321",career:"산후조리원 근무 3년",note:"쌍둥이 케어 경험 있음",availableTime:"08:00~17:00",area:"서울 송파/강동",rating:4.5},
-    {id:"h3",name:"박미경",gender:"여",phone:"010-5555-6666",bank:"우리은행",account:"456-789-123",career:"간호조무사 출신, 산후도우미 7년",note:"모유수유 상담 가능",availableTime:"10:00~19:00",area:"서울 마포/용산",rating:4.9},
-  ],bookings:[],callRequests:[],_nextId:100};
-  localStorage.setItem(DB_KEY,JSON.stringify(init));
-  return init;
+  try{const d=localStorage.getItem(DB_KEY);if(d){const p=JSON.parse(d);COLLECTIONS.forEach(c=>{if(!p[c])p[c]=[];});if(!p._nextId)p._nextId=100;return p;}}catch(e){}
+  const init={requests:[],children:[],helpers:DEFAULT_HELPERS,bookings:[],callRequests:[],_nextId:100};
+  localStorage.setItem(DB_KEY,JSON.stringify(init));return init;
 }
-function saveDB(db){localStorage.setItem(DB_KEY,JSON.stringify(db));}
+function saveDB(db){
+  localStorage.setItem(DB_KEY,JSON.stringify(db));
+  /* Firestore에 비동기 저장 */
+  syncToFirestore(db);
+}
 function genId(db){const id="id_"+(db._nextId++);return id;}
+
+/* ── Firestore 동기화 함수들 ── */
+function syncToFirestore(db){
+  COLLECTIONS.forEach(col=>{
+    const items=db[col]||[];
+    items.forEach(item=>{
+      if(!item.id)return;
+      firestore.collection(col).doc(item.id).set(item,{merge:true}).catch(e=>console.warn("Firestore write error:",e));
+    });
+  });
+  /* _nextId 메타 저장 */
+  firestore.collection("_meta").doc("counter").set({_nextId:db._nextId||100}).catch(()=>{});
+}
+
+/* Firestore에서 전체 데이터 불러오기 (앱 시작시 1회) */
+async function loadFromFirestore(){
+  try{
+    const db=getDB();let changed=false;
+    for(const col of COLLECTIONS){
+      const snap=await firestore.collection(col).get();
+      if(!snap.empty){
+        const items=[];snap.forEach(doc=>items.push(doc.data()));
+        if(items.length>0){db[col]=items;changed=true;}
+      }
+    }
+    /* _nextId 복원 */
+    const metaSnap=await firestore.collection("_meta").doc("counter").get();
+    if(metaSnap.exists){const m=metaSnap.data();if(m._nextId)db._nextId=Math.max(db._nextId||100,m._nextId);}
+    /* 기본 도우미가 Firestore에 없으면 업로드 */
+    if((db.helpers||[]).length===0){db.helpers=DEFAULT_HELPERS;changed=true;}
+    if(changed){localStorage.setItem(DB_KEY,JSON.stringify(db));}
+    console.log("✅ Firestore 동기화 완료! 컬렉션:", COLLECTIONS.map(c=>`${c}(${(db[c]||[]).length})`).join(", "));
+    return db;
+  }catch(e){console.warn("Firestore load 실패 (로컬 데이터 사용):",e);return getDB();}
+}
+
+/* Firestore에서 삭제된 항목 제거 */
+function removeFromFirestore(collection,docId){
+  firestore.collection(collection).doc(docId).delete().catch(e=>console.warn("Firestore delete error:",e));
+}
 
 /* ═══════════════════
    Status & Constants
@@ -112,6 +175,7 @@ function Btn({children,v="primary",cls="",...p}){const vs={primary:"bg-indigo-50
    ══════════════ */
 function usePolling(ms){
   const [data,setData]=useState({requests:[],helpers:[],bookings:[],callRequests:[],stats:{}});
+  const [fireLoaded,setFireLoaded]=useState(false);
   const load=useCallback(()=>{
     const db=getDB();
     setData({requests:db.requests||[],helpers:db.helpers||[],bookings:db.bookings||[],callRequests:db.callRequests||[],stats:{
@@ -125,7 +189,11 @@ function usePolling(ms){
       totalBookings:(db.bookings||[]).length,
     }});
   },[]);
-  useEffect(()=>{load();const iv=setInterval(load,ms);return()=>clearInterval(iv);},[ms,load]);
+  useEffect(()=>{
+    /* 앱 시작시 Firestore에서 데이터 불러오기 */
+    loadFromFirestore().then(()=>{setFireLoaded(true);load();});
+  },[]);
+  useEffect(()=>{if(fireLoaded){const iv=setInterval(load,ms);return()=>clearInterval(iv);}},[ms,load,fireLoaded]);
   return {...data,reload:load};
 }
 
@@ -240,7 +308,7 @@ function Requests({requests,helpers,bookings:allBookings,reload}){
     saveDB(db);reload();setBookingModal(false);setBkError("");setBkForm({startDate:"",endDate:"",startTime:"09:00",endTime:"18:00",helperId:"",fee:""});
     const reqIdx=db.requests.findIndex(r=>r.id===sel.id);if(reqIdx>=0)setSel(db.requests[reqIdx]);
   };
-  const removeBooking=(bId)=>{if(!confirm("이 예약을 삭제하시겠습니까?"))return;const db=getDB();db.bookings=db.bookings.filter(b=>b.id!==bId);saveDB(db);reload();};
+  const removeBooking=(bId)=>{if(!confirm("이 예약을 삭제하시겠습니까?"))return;const db=getDB();db.bookings=db.bookings.filter(b=>b.id!==bId);saveDB(db);removeFromFirestore("bookings",bId);reload();};
   const openEditBk=(bk)=>{setEditBkModal(bk);setEditBkForm({startDate:bk.startDate,endDate:bk.endDate,startTime:bk.startTime||"09:00",endTime:bk.endTime||"18:00",helperId:bk.helperId,fee:bk.fee||""});setBkError("");};
   const saveEditBk=()=>{
     if(!editBkModal)return;
@@ -520,7 +588,7 @@ function Helpers({helpers,reload}){
   const [f,setF]=useState(blank);const up=(k,v)=>setF(p=>({...p,[k]:v}));
   const startEdit=(h)=>{setEditing(h.id);setF({name:h.name||"",phone:h.phone||"",gender:h.gender||"여",bank:h.bank||"",account:h.account||"",career:h.career||"",availableTime:h.availableTime||"",area:h.area||"",rating:h.rating||4.5,note:h.note||""});};
   const save=()=>{const db=getDB();if(editing==="new"){db.helpers.push({id:genId(db),...f,rating:Number(f.rating)});}else{const idx=db.helpers.findIndex(h=>h.id===editing);if(idx>=0)db.helpers[idx]={...db.helpers[idx],...f,rating:Number(f.rating)};}saveDB(db);reload();setEditing(null);};
-  const del=(id)=>{if(!confirm("삭제하시겠습니까?"))return;const db=getDB();db.helpers=db.helpers.filter(h=>h.id!==id);saveDB(db);reload();};
+  const del=(id)=>{if(!confirm("삭제하시겠습니까?"))return;const db=getDB();db.helpers=db.helpers.filter(h=>h.id!==id);saveDB(db);removeFromFirestore("helpers",id);reload();};
   return <div className="fade-in space-y-4">
     <div className="flex items-center justify-between"><h2 className="text-xl font-bold text-gray-900">도우미 관리</h2><div className="flex items-center gap-2"><button onClick={()=>exportHelpers(helpers)} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 transition flex items-center gap-1">{"\u{1F4E5}"} 엑셀</button><Btn onClick={()=>{setEditing("new");setF(blank);}}>+ 추가</Btn></div></div>
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">{helpers.map(h=><div key={h.id} className="bg-white rounded-xl border border-gray-100 p-4 space-y-2">
